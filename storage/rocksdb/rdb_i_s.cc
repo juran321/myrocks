@@ -1043,6 +1043,47 @@ static int rdb_i_s_ddl_init(void *const p) {
   DBUG_RETURN(0);
 }
 
+static ST_FIELD_INFO rdb_i_s_fk_fields_info[] = {
+    ROCKSDB_FIELD_INFO("ID", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+    ROCKSDB_FIELD_INFO("FOR_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+    ROCKSDB_FIELD_INFO("REF_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+    ROCKSDB_FIELD_INFO("N_COLS", sizeof(uint32_t), MYSQL_TYPE_LONG, 0),
+    ROCKSDB_FIELD_INFO("TYPE", sizeof(uint32_t), MYSQL_TYPE_LONG, 0),
+    ROCKSDB_FIELD_INFO_END};
+
+static int rdb_i_s_fk_init(void *const p) {
+  DBUG_ENTER_FUNC();
+
+  my_core::ST_SCHEMA_TABLE *schema;
+
+  schema = (my_core::ST_SCHEMA_TALBE *)p;
+
+  schema->fields_info = rdb_i_s_fk_fields_info;
+  schema->fill_table = rdb_i_s_fk_fill_table;
+
+  DBUG_RETURN(0);
+}
+
+static ST_FIELD_INFO rdb_i_s_fk_col_fields_info[] = {
+    ROCKSDB_FIELD_INFO("ID", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+    ROCKSDB_FIELD_INFO("FOR_COL_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+    ROCKSDB_FIELD_INFO("REF_COL_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+    ROCKSDB_FIELD_INFO("POS", sizeof(uint32_t), MYSQL_TYPE_LONG, 0),
+    ROCKSDB_FIELD_INFO_END};
+
+static int rdb_i_s_fk_col_init(void *const p) {
+  DBUG_ENTER_FUNC();
+
+  my_core::ST_SCHEMA_TABLE *schema;
+
+  schema = (my_core::ST_SCHEMA_TABLE *)p;
+
+  schema->fields_info = rdb_i_s_fk_col_fields_info;
+  schema->fill_table = rdb_i_s_fk_col_fill_table;
+
+  DBUG_RETURN(0);
+}
+
 static int rdb_i_s_cfoptions_init(void *const p) {
   DBUG_ENTER_FUNC();
 
@@ -1715,6 +1756,38 @@ struct st_mysql_plugin rdb_i_s_ddl = {
     "RocksDB Data Dictionary",
     PLUGIN_LICENSE_GPL,
     rdb_i_s_ddl_init,
+    rdb_i_s_deinit,
+    0x0001,  /* version number (0.1) */
+    nullptr, /* status variables */
+    nullptr, /* system variables */
+    nullptr, /* config options */
+    0,       /* flags */
+};
+
+struct st_mysql_plugin rdb_i_s_fk = {
+    MYSQL_INFORMATION_SCHEMA_PLUGIN,
+    &rdb_i_s_info,
+    "ROCKSDB_FOREIGN_KEY",
+    "Quan Zhang"
+    "RocksDB foreign key table dictionary",
+    PLUGIN_LICENSE_GPL,
+    rdb_i_s_fk_init,
+    rdb_i_s_deinit,
+    0x0001,  /* version number (0.1) */
+    nullptr, /* status variables */
+    nullptr, /* system variables */
+    nullptr, /* config options */
+    0,       /* flags */
+};
+
+struct st_mysql_plugin rdb_i_s_fk_col = {
+    MYSQL_INFORMATION_SCHEMA_PLUGIN,
+    &rdb_i_s_info,
+    "ROCKSDB_FOREIGN_KEY_COL",
+    "Quan Zhang"
+    "RocksDB foreign key column dictionary",
+    PLUGIN_LICENSE_GPL,
+    rdb_i_s_fk_col_init,
     rdb_i_s_deinit,
     0x0001,  /* version number (0.1) */
     nullptr, /* status variables */

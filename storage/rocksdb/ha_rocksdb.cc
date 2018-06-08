@@ -4432,8 +4432,10 @@ static int rocksdb_init_func(void *const p) {
   rocksdb_hton->update_table_stats = rocksdb_update_table_stats;
   rocksdb_hton->flush_logs = rocksdb_flush_wal;
 
+  // 2018/06/07 Quan Zhang Support Foreign Key
   rocksdb_hton->flags = HTON_TEMPORARY_NOT_SUPPORTED |
-                        HTON_SUPPORTS_EXTENDED_KEYS | HTON_CAN_RECREATE;
+                        HTON_SUPPORTS_EXTENDED_KEYS | HTON_CAN_RECREATE |
+                        HTON_SUPPORTS_FOREIGN_KEYS;
 
   DBUG_ASSERT(!mysqld_embedded);
 

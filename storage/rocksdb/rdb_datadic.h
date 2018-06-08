@@ -1030,6 +1030,21 @@ public:
   GL_INDEX_ID get_autoincr_gl_index_id();
 };
 
+// 2018/06/07 Quan Zhang A foreign key definition
+class Rdb_fk_def {
+private:
+  std::string m_id;
+  std::string m_foreign_tablename;
+  std::string m_reference_tablename;
+  uint m_number_of_columns_in_foreign_key;
+  uint m_type;
+};
+
+// 2018/06/07 Quan Zhang A foreign key column definition
+class Rdb_fk_col_def {
+
+};
+
 /*
   A thread-safe sequential number generator. Its performance is not a concern
   hence it is ok to protect it by a mutex.
