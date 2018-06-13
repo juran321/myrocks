@@ -107,6 +107,9 @@ static st_io_stall_stats io_stall_stats;
 
 const std::string DEFAULT_CF_NAME("default");
 const std::string DEFAULT_SYSTEM_CF_NAME("__system__");
+// 2018/06/11 Quan Zhang Create a new column family for foreign key
+const std::string DEFAULT_FK_CF_NAME("__fk__");
+
 const std::string PER_INDEX_CF_NAME("$per_index_cf");
 
 class Rdb_explicit_snapshot;
@@ -12035,6 +12038,54 @@ bool ha_rocksdb::commit_inplace_alter_table(
   }
 
   DBUG_RETURN(HA_EXIT_SUCCESS);
+}
+
+/** Gets the foreign key create info for a table stored in Rocksdb.
+ @return own: character string in the form which can be inserted to the
+ CREATE TABLE statement, MUST be freed with
+ ha_innobase::free_foreign_key_create_info */
+
+char *ha_rocksdb::get_foreign_key_create_info(void) { return (NULL); }
+
+/** Gets the list of foreign keys in this table.
+ @return always 0, that is, always succeeds */
+
+int ha_rocksdb::get_foreign_key_list(
+    THD *thd,                           /*!< in: user thread handle */
+    List<FOREIGN_KEY_INFO> *f_key_list) /*!< out: foreign key list */
+{
+  return (0);
+}
+
+/** Gets the set of foreign keys where this table is the referenced table.
+ @return always 0, that is, always succeeds */
+
+int ha_rocksdb::get_parent_foreign_key_list(
+    THD *thd,                           /*!< in: user thread handle */
+    List<FOREIGN_KEY_INFO> *f_key_list) /*!< out: foreign key list */
+{
+  return (0);
+}
+
+bool ha_rocksdb::can_switch_engines(void) { return false; }
+
+/** Checks if a table is referenced by a foreign key. The MySQL manual states
+ that a REPLACE is either equivalent to an INSERT, or DELETE(s) + INSERT. Only a
+ delete is then allowed internally to resolve a duplicate key conflict in
+ REPLACE, not an update.
+ @return > 0 if referenced by a FOREIGN KEY */
+
+uint ha_rocksdb::referenced_by_foreign_key(void) { return (0); }
+
+/** Frees the foreign key create info for a table stored in Rocksdb, if it is
+ non-NULL. */
+
+void ha_rocksdb::free_foreign_key_create_info(
+    char *str) /*!< in, own: create info string to free */
+{
+  if (str != NULL) {
+    my_free(str);
+  }
 }
 
 #define SHOW_FNAME(name) rocksdb_show_##name

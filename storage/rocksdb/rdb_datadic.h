@@ -406,6 +406,7 @@ public:
     MAX_INDEX_ID = 7,
     DDL_CREATE_INDEX_ONGOING = 8,
     AUTO_INC = 9,
+    FK_DEFINITION = 10,  // 2018/06/11 Quan Zhang add FK data dictionary type
     END_DICT_INDEX_ID = 255
   };
 
@@ -964,6 +965,25 @@ inline bool Rdb_key_def::has_unpack_info(const uint &kp) const {
   return m_pack_info[kp].uses_unpack_info();
 }
 
+// 2018/06/07 Quan Zhang A foreign key definition
+struct Rdb_fk_def {
+  std::string m_id;  // id can be foreign_cf_id + foreign_index_id +
+                     // referenced_cf_id + referenced_index_id
+  /* foreign  index */
+  GL_INDEX_ID m_foreign_gl_index_id;
+  /* referenced index*/
+  GL_INDEX_ID m_referenced_gl_index_id;
+  uint m_type;
+};
+
+struct Rdb_fk_compare {
+  bool operator()(const Rdb_fk_def& lhs, const Rdb_fk_def& rhs) const {
+    return (strcmp(lhs.m_id.c_str(), rhs.m_id.c_str()) < 0);
+  }
+};
+
+typedef std::set<Rdb_fk_def, Rdb_fk_compare> Rdb_fk_set;
+
 /*
   A table definition. This is an entry in the mapping
 
@@ -1014,6 +1034,14 @@ public:
   /* Array of index descriptors */
   std::shared_ptr<Rdb_key_def> *m_key_descr_arr;
 
+  // 2018/06/11 Quan Zhang Set of foreign key constraints in the table;
+  // these refer to columns in other tables;
+  Rdb_fk_set m_foreign_descr_set;
+
+  // 2018/06/11 Quan Zhang Set of foreign key costraints which refer to
+  // this table
+  Rdb_fk_set m_referenced_descr_set;
+
   std::atomic<longlong> m_hidden_pk_val;
   std::atomic<ulonglong> m_auto_incr_val;
 
@@ -1028,21 +1056,6 @@ public:
   const std::string &base_tablename() const { return m_tablename; }
   const std::string &base_partition() const { return m_partition; }
   GL_INDEX_ID get_autoincr_gl_index_id();
-};
-
-// 2018/06/07 Quan Zhang A foreign key definition
-class Rdb_fk_def {
-private:
-  std::string m_id;
-  std::string m_foreign_tablename;
-  std::string m_reference_tablename;
-  uint m_number_of_columns_in_foreign_key;
-  uint m_type;
-};
-
-// 2018/06/07 Quan Zhang A foreign key column definition
-class Rdb_fk_col_def {
-
 };
 
 /*
@@ -1323,6 +1336,10 @@ public:
                          const GL_INDEX_ID &index_id) const;
   bool get_index_info(const GL_INDEX_ID &gl_index_id,
                       struct Rdb_index_info *const index_info) const;
+
+  /* 2018/06/11 Quan Zhang FK Index => RF Index under the */
+  void get_fk_defs(const GL_INDEX_ID &gl_index_id,
+                   struct std::vector<Rdb_fk_def> &fk_def_vec) const;
 
   /* CF id => CF flags */
   void add_cf_flags(rocksdb::WriteBatch *const batch, const uint &cf_id,

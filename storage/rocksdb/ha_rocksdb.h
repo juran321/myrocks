@@ -1048,6 +1048,20 @@ public:
   /*
     Default implementation from cancel_pushed_idx_cond() suits us
   */
+
+  // 2018/06/11 Quan Zhang foreign key API
+  char *get_foreign_key_create_info();
+
+  int get_foreign_key_list(THD *thd, List<FOREIGN_KEY_INFO> *f_key_list);
+
+  int get_parent_foreign_key_list(THD *thd, List<FOREIGN_KEY_INFO> *f_key_list);
+
+  bool can_switch_engines();
+
+  uint referenced_by_foreign_key();
+
+  void free_foreign_key_create_info(char *str);
+
 private:
   struct key_def_cf_info {
     rocksdb::ColumnFamilyHandle *cf_handle;
