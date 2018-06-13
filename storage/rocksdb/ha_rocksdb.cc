@@ -12054,6 +12054,13 @@ int ha_rocksdb::get_foreign_key_list(
     THD *thd,                           /*!< in: user thread handle */
     List<FOREIGN_KEY_INFO> *f_key_list) /*!< out: foreign key list */
 {
+  for (auto& it = m_tbl_def->m_foreign_descr_set.begin();
+      it != m_tbl_def->m_foreign_descr_set.end(); ++it) {
+    FOREIGN_KEY_INFO*	pf_key_info = get_foreign_key_info(thd, *it);
+    if (pf_key_info) {
+      f_key_list->push_back(pf_key_info);
+    }
+  }
   return (0);
 }
 
@@ -12064,6 +12071,13 @@ int ha_rocksdb::get_parent_foreign_key_list(
     THD *thd,                           /*!< in: user thread handle */
     List<FOREIGN_KEY_INFO> *f_key_list) /*!< out: foreign key list */
 {
+  for (auto& it = m_tbl_def->m_referenced_descr_set.begin();
+      it != m_tbl_def->m_referenced_descr_set.end(); ++it) {
+    FOREIGN_KEY_INFO*	pf_key_info = get_foreign_key_info(thd, *it);
+    if (pf_key_info) {
+      f_key_list->push_back(pf_key_info);
+    }
+  }
   return (0);
 }
 
@@ -12075,7 +12089,9 @@ bool ha_rocksdb::can_switch_engines(void) { return false; }
  REPLACE, not an update.
  @return > 0 if referenced by a FOREIGN KEY */
 
-uint ha_rocksdb::referenced_by_foreign_key(void) { return (0); }
+uint ha_rocksdb::referenced_by_foreign_key(void) {
+  return (!m_tbl_def->m_referenced_descr_set.empty());
+}
 
 /** Frees the foreign key create info for a table stored in Rocksdb, if it is
  non-NULL. */

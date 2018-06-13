@@ -973,8 +973,24 @@ struct Rdb_fk_def {
   GL_INDEX_ID m_foreign_gl_index_id;
   /* referenced index*/
   GL_INDEX_ID m_referenced_gl_index_id;
-  uint m_type;
+  uint32_t m_type;
 };
+
+bool operator()(const Rdb_fk_def &lhs, const Rdb_fk_def &rhs) const {
+  if (lhs.m_foreign_gl_index_id.cf_id == rhs.m_foreign_gl_index_id.cf_id)
+  {
+    if (lhs.m_foreign_gl_index_id.index_id == rhs.m_foreign_gl_index_id.index_id)
+    {
+      if (lhs.m_referenced_gl_index_id.cf_id == rhs.m_referenced_gl_index_id.cf_id)
+      {
+        return (lhs.m_referenced_gl_index_id.index_id < rhs.m_referenced_gl_index_id.index_id);
+      }
+      return (lhs.m_referenced_gl_index_id.cf_id < rhs.m_referenced_gl_index_id.cf_id);
+    }
+    return (lhs.m_foreign_gl_index_id.index_id < rhs.m_foreign_gl_index_id.index_id);
+  }
+  return (lhs.m_foreign_gl_index_id.cf_id < rhs.m_foreign_gl_index_id.cf_id);
+}
 
 struct Rdb_fk_compare {
   bool operator()(const Rdb_fk_def& lhs, const Rdb_fk_def& rhs) const {
@@ -1269,6 +1285,10 @@ private:
   value: version, {max auto_increment so far}
   max auto_increment is 8 bytes
 
+  10. foreign key entry
+  key: Rdb_key_def::FK_DEFINITION(0x10) + cf_id (which table) + index_id
+  value: referened_cf_id (which table), referened_index_id, type
+
   Data dictionary operations are atomic inside RocksDB. For example,
   when creating a table with two indexes, it is necessary to call Put
   three times. They have to be atomic. Rdb_dict_manager has a wrapper function
@@ -1338,6 +1358,9 @@ public:
                       struct Rdb_index_info *const index_info) const;
 
   /* 2018/06/11 Quan Zhang FK Index => RF Index under the */
+  void Rdb_dict_manager::put_fk_def(const GL_INDEX_ID &foreign_gl_index_id,
+                                    const GL_INDEX_ID &referenced_gl_index_id,
+                                    const uint32_t &type);
   void get_fk_defs(const GL_INDEX_ID &gl_index_id,
                    struct std::vector<Rdb_fk_def> &fk_def_vec) const;
 

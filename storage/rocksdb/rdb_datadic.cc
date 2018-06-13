@@ -3924,10 +3924,7 @@ bool Rdb_ddl_manager::init(Rdb_dict_manager *const dict_arg,
       }
 
       std::vector<Rdb_fk_def> fk_def_vec;
-      if (!m_dict->get_fk_defs(gl_index_id, fk_def_vec)) {
-        // TODO: sql_print_error
-        return true;
-      }
+      m_dict->get_fk_defs(gl_index_id, fk_def_vec);
 
       rocksdb::ColumnFamilyHandle *const cfh =
           cf_manager->get_cf(gl_index_id.cf_id);
@@ -4805,6 +4802,51 @@ bool Rdb_dict_manager::get_index_info(
   }
 
   return found;
+}
+
+void Rdb_dict_manager::put_fk_def(
+  const GL_INDEX_ID &foreign_gl_index_id,
+  const GL_INDEX_ID &referenced_gl_index_id,
+  const uint32_t &type) {
+  uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3] = {0};
+  uchar value_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3] = {0};
+  rdb_netbuf_store_uint32(key_buf, Rdb_key_def::FK_DEFINITION);
+  rdb_netbuf_store_uint32(key_buf + Rdb_key_def::INDEX_NUMBER_SIZE, foreign_gl_index_id.cf_id);
+  rdb_netbuf_store_uint32(key_buf + 2 * Rdb_key_def::INDEX_NUMBER_SIZE, foreign_gl_index_id.index_id);
+  const rocksdb::Slice key = rocksdb::Slice((char *)key_buf, sizeof(key_buf));
+
+  rdb_netbuf_store_uint32(value_buf, referenced_gl_index_id.cf_id);
+  rdb_netbuf_store_uint32(value_buf + Rdb_key_def::INDEX_NUMBER_SIZE, referenced_gl_index_id.index_id);
+  rdb_netbuf_store_uint32(value_buf + 2 * Rdb_key_def::INDEX_NUMBER_SIZE, type);
+  const rocksdb::Slice value =
+      rocksdb::Slice((char *)value_buf, sizeof(value_buf));
+  batch->Put(m_system_cfh, key, value);
+}
+
+void Rdb_dict_manager::get_fk_defs(
+  const GL_INDEX_ID &gl_index_id,
+  struct std::vector<Rdb_fk_def> &fk_def_vec) const {
+
+  uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3] = {0};
+  dump_index_id(key_buf, Rdb_key_def::FK_DEFINITION, gl_index_id);
+  const rocksdb::Slice &index_slice = rocksdb::Slice((char *)key_buf, sizeof(key_buf));
+
+  rocksdb::Iterator *it = new_iterator();
+  for (it->Seek(index_slice); it->Valid(); it->Next()) {
+    rocksdb::Slice key = it->key();
+
+    const uchar *const ptr = (const uchar *)key.data();
+
+    Rdb_fk_def fk_def;
+    fk_def.m_foreign_gl_index_id = gl_index_id;
+    fk_def.m_referenced_gl_index_id.cf_id =
+        rdb_netbuf_to_uint32(ptr + Rdb_key_def::INDEX_NUMBER_SIZE);
+    fk_def.m_referenced_gl_index_id.index_id =
+        rdb_netbuf_to_uint32(ptr + 2 * Rdb_key_def::INDEX_NUMBER_SIZE);
+    fk_def.m_type = rdb_netbuf_to_uint32(ptr + 3 * Rdb_key_def::INDEX_NUMBER_SIZE);
+    fk_def_vec.push_back(fk_def);
+  }
+  delete it;
 }
 
 bool Rdb_dict_manager::get_cf_flags(const uint32_t &cf_id,
