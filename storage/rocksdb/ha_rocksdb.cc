@@ -12054,9 +12054,9 @@ int ha_rocksdb::get_foreign_key_list(
     THD *thd,                           /*!< in: user thread handle */
     List<FOREIGN_KEY_INFO> *f_key_list) /*!< out: foreign key list */
 {
-  for (auto& it = m_tbl_def->m_foreign_descr_set.begin();
+  for (auto it = m_tbl_def->m_foreign_descr_set.begin();
       it != m_tbl_def->m_foreign_descr_set.end(); ++it) {
-    FOREIGN_KEY_INFO*	pf_key_info = get_foreign_key_info(thd, *it);
+    FOREIGN_KEY_INFO*	pf_key_info;// = get_foreign_key_info(thd, *it);
     if (pf_key_info) {
       f_key_list->push_back(pf_key_info);
     }
@@ -12071,9 +12071,9 @@ int ha_rocksdb::get_parent_foreign_key_list(
     THD *thd,                           /*!< in: user thread handle */
     List<FOREIGN_KEY_INFO> *f_key_list) /*!< out: foreign key list */
 {
-  for (auto& it = m_tbl_def->m_referenced_descr_set.begin();
+  for (auto it = m_tbl_def->m_referenced_descr_set.begin();
       it != m_tbl_def->m_referenced_descr_set.end(); ++it) {
-    FOREIGN_KEY_INFO*	pf_key_info = get_foreign_key_info(thd, *it);
+    FOREIGN_KEY_INFO*	pf_key_info;// = get_foreign_key_info(thd, *it);
     if (pf_key_info) {
       f_key_list->push_back(pf_key_info);
     }
@@ -13355,4 +13355,5 @@ mysql_declare_plugin(rocksdb_se){
     myrocks::rdb_i_s_cfoptions, myrocks::rdb_i_s_compact_stats,
     myrocks::rdb_i_s_global_info, myrocks::rdb_i_s_ddl,
     myrocks::rdb_i_s_index_file_map, myrocks::rdb_i_s_lock_info,
-    myrocks::rdb_i_s_trx_info, myrocks::rdb_i_s_deadlock_info mysql_declare_plugin_end;
+    myrocks::rdb_i_s_trx_info, myrocks::rdb_i_s_deadlock_info,
+    myrocks::rdb_i_s_fk mysql_declare_plugin_end;

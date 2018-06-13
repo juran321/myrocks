@@ -976,25 +976,21 @@ struct Rdb_fk_def {
   uint32_t m_type;
 };
 
-bool operator()(const Rdb_fk_def &lhs, const Rdb_fk_def &rhs) const {
-  if (lhs.m_foreign_gl_index_id.cf_id == rhs.m_foreign_gl_index_id.cf_id)
-  {
-    if (lhs.m_foreign_gl_index_id.index_id == rhs.m_foreign_gl_index_id.index_id)
-    {
-      if (lhs.m_referenced_gl_index_id.cf_id == rhs.m_referenced_gl_index_id.cf_id)
-      {
-        return (lhs.m_referenced_gl_index_id.index_id < rhs.m_referenced_gl_index_id.index_id);
-      }
-      return (lhs.m_referenced_gl_index_id.cf_id < rhs.m_referenced_gl_index_id.cf_id);
-    }
-    return (lhs.m_foreign_gl_index_id.index_id < rhs.m_foreign_gl_index_id.index_id);
-  }
-  return (lhs.m_foreign_gl_index_id.cf_id < rhs.m_foreign_gl_index_id.cf_id);
-}
-
 struct Rdb_fk_compare {
-  bool operator()(const Rdb_fk_def& lhs, const Rdb_fk_def& rhs) const {
-    return (strcmp(lhs.m_id.c_str(), rhs.m_id.c_str()) < 0);
+  bool operator()(const Rdb_fk_def &lhs, const Rdb_fk_def &rhs) const {
+    if (lhs.m_foreign_gl_index_id.cf_id == rhs.m_foreign_gl_index_id.cf_id)
+    {
+      if (lhs.m_foreign_gl_index_id.index_id == rhs.m_foreign_gl_index_id.index_id)
+      {
+        if (lhs.m_referenced_gl_index_id.cf_id == rhs.m_referenced_gl_index_id.cf_id)
+        {
+          return (lhs.m_referenced_gl_index_id.index_id < rhs.m_referenced_gl_index_id.index_id);
+        }
+        return (lhs.m_referenced_gl_index_id.cf_id < rhs.m_referenced_gl_index_id.cf_id);
+      }
+      return (lhs.m_foreign_gl_index_id.index_id < rhs.m_foreign_gl_index_id.index_id);
+    }
+    return (lhs.m_foreign_gl_index_id.cf_id < rhs.m_foreign_gl_index_id.cf_id);
   }
 };
 
@@ -1358,7 +1354,7 @@ public:
                       struct Rdb_index_info *const index_info) const;
 
   /* 2018/06/11 Quan Zhang FK Index => RF Index under the */
-  void Rdb_dict_manager::put_fk_def(const GL_INDEX_ID &foreign_gl_index_id,
+  void put_fk_def(rocksdb::WriteBatch *const batch, const GL_INDEX_ID &foreign_gl_index_id,
                                     const GL_INDEX_ID &referenced_gl_index_id,
                                     const uint32_t &type);
   void get_fk_defs(const GL_INDEX_ID &gl_index_id,

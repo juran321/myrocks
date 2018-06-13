@@ -4805,6 +4805,7 @@ bool Rdb_dict_manager::get_index_info(
 }
 
 void Rdb_dict_manager::put_fk_def(
+  rocksdb::WriteBatch *const batch,
   const GL_INDEX_ID &foreign_gl_index_id,
   const GL_INDEX_ID &referenced_gl_index_id,
   const uint32_t &type) {
