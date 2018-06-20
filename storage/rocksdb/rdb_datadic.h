@@ -967,8 +967,6 @@ inline bool Rdb_key_def::has_unpack_info(const uint &kp) const {
 
 // 2018/06/07 Quan Zhang A foreign key definition
 struct Rdb_fk_def {
-  std::string m_id;  // id can be foreign_cf_id + foreign_index_id +
-                     // referenced_cf_id + referenced_index_id
   /* foreign  index */
   GL_INDEX_ID m_foreign_gl_index_id;
   /* referenced index*/

@@ -12040,6 +12040,133 @@ bool ha_rocksdb::commit_inplace_alter_table(
   DBUG_RETURN(HA_EXIT_SUCCESS);
 }
 
+static FOREIGN_KEY_INFO*
+get_foreign_key_info(
+  THD* thd,
+  const Rdb_fk_def& foreign
+)
+{
+  FOREIGN_KEY_INFO	f_key_info;
+	FOREIGN_KEY_INFO*	pf_key_info;
+
+  std::string foreign_table_name = ddl_manager.safe_get_table_name(foreign.m_foreign_gl_index_id);
+  std::string referened_table_name = ddl_manager.safe_get_table_name(foreign.m_referenced_gl_index_id);
+
+  std::string str;
+  std::string foreign_db;
+  std::string foreign_table;
+  std::string referenced_db;
+  std::string referenced_table;
+  if (rdb_normalize_tablename(foreign_table_name, &str) != HA_EXIT_SUCCESS) {
+    SHIP_ASSERT(false);
+    return nullptr;
+  }
+
+  if (rdb_split_normalized_tablename(str, &foreign_db, &foreign_table) != HA_EXIT_SUCCESS) {
+    SHIP_ASSERT(false);
+    return nullptr;
+  }
+
+  if (rdb_normalize_tablename(referened_table_name, &str) != HA_EXIT_SUCCESS) {
+    SHIP_ASSERT(false);
+    return nullptr;
+  }
+
+  if (rdb_split_normalized_tablename(str, &referenced_db, &referenced_table) != HA_EXIT_SUCCESS) {
+    SHIP_ASSERT(false);
+    return nullptr;
+  }
+
+  std::stringstream id;
+  id << foreign.m_foreign_gl_index_id.cf_id << "," << foreign.m_foreign_gl_index_id.index_id << ","
+  << foreign.m_referenced_gl_index_id.cf_id << "," << foreign.m_referenced_gl_index_id.index_id;
+
+  f_key_info.foreign_id = thd_make_lex_string(thd, 0, id.str().c_str(),
+		(uint) id.str().length(), 1);
+
+  f_key_info.referenced_db = thd_make_lex_string(
+		thd, 0, referenced_db.c_str(), referenced_db.length(), 1);
+
+  f_key_info.referenced_table = thd_make_lex_string(
+		thd, 0, referenced_table.c_str(), referenced_table.length(), 1);
+
+  f_key_info.foreign_db = thd_make_lex_string(
+		thd, 0, foreign_db.c_str(), foreign_db.length(), 1);
+
+  f_key_info.foreign_table = thd_make_lex_string(
+		thd, 0, foreign_table.c_str(), foreign_table.length(), 1);
+
+  LEX_STRING*		name = NULL;
+
+  std::string foreign_column_name;
+  std::string referenced_column_name;
+
+  std::shared_ptr<const Rdb_key_def> foreign_key_def = ddl_manager.safe_find(foreign.m_foreign_gl_index_id);
+  foreign_column_name = foreign_key_def->m_name;
+
+  name = thd_make_lex_string(thd, name, foreign_column_name.c_str(),
+					   (uint) foreign_column_name.length(), 1);
+
+  f_key_info.foreign_fields.push_back(name);
+
+  std::shared_ptr<const Rdb_key_def> referenced_key_def = ddl_manager.safe_find(foreign.m_referenced_gl_index_id);
+  referenced_column_name = referenced_key_def->m_name;
+
+  name = thd_make_lex_string(thd, name, referenced_column_name.c_str(),
+					   (uint) referenced_column_name.length(), 1);
+
+  f_key_info.referenced_fields.push_back(name);
+
+  LEX_STRING*		referenced_key_name;
+  referenced_key_name = thd_make_lex_string(thd, referenced_key_name, referenced_column_name.c_str(),
+					   (uint) referenced_column_name.length(), 1);
+  f_key_info.referenced_key_name = referenced_key_name;
+
+  uint			len;
+  const char*		ptr;
+
+  if (foreign.m_type & DICT_FOREIGN_ON_DELETE_CASCADE) {
+		len = 7;
+		ptr = "CASCADE";
+	} else if (foreign.m_type & DICT_FOREIGN_ON_DELETE_SET_NULL) {
+		len = 8;
+		ptr = "SET NULL";
+	} else if (foreign.m_type & DICT_FOREIGN_ON_DELETE_NO_ACTION) {
+		len = 9;
+		ptr = "NO ACTION";
+	} else {
+		len = 8;
+		ptr = "RESTRICT";
+	}
+
+	f_key_info.delete_method = thd_make_lex_string(
+		thd, f_key_info.delete_method, ptr,
+		static_cast<unsigned int>(len), 1);
+
+	if (foreign.m_type & DICT_FOREIGN_ON_UPDATE_CASCADE) {
+		len = 7;
+		ptr = "CASCADE";
+	} else if (foreign.m_type & DICT_FOREIGN_ON_UPDATE_SET_NULL) {
+		len = 8;
+		ptr = "SET NULL";
+	} else if (foreign.m_type & DICT_FOREIGN_ON_UPDATE_NO_ACTION) {
+		len = 9;
+		ptr = "NO ACTION";
+	} else {
+		len = 8;
+		ptr = "RESTRICT";
+	}
+
+	f_key_info.update_method = thd_make_lex_string(
+		thd, f_key_info.update_method, ptr,
+		static_cast<unsigned int>(len), 1);
+
+	pf_key_info = (FOREIGN_KEY_INFO*) thd_memdup(thd, &f_key_info,
+						      sizeof(FOREIGN_KEY_INFO));
+
+	return(pf_key_info);
+}
+
 /** Gets the foreign key create info for a table stored in Rocksdb.
  @return own: character string in the form which can be inserted to the
  CREATE TABLE statement, MUST be freed with
@@ -12056,7 +12183,7 @@ int ha_rocksdb::get_foreign_key_list(
 {
   for (auto it = m_tbl_def->m_foreign_descr_set.begin();
       it != m_tbl_def->m_foreign_descr_set.end(); ++it) {
-    FOREIGN_KEY_INFO*	pf_key_info;// = get_foreign_key_info(thd, *it);
+    FOREIGN_KEY_INFO*	pf_key_info = get_foreign_key_info(thd, *it);
     if (pf_key_info) {
       f_key_list->push_back(pf_key_info);
     }
@@ -12073,7 +12200,7 @@ int ha_rocksdb::get_parent_foreign_key_list(
 {
   for (auto it = m_tbl_def->m_referenced_descr_set.begin();
       it != m_tbl_def->m_referenced_descr_set.end(); ++it) {
-    FOREIGN_KEY_INFO*	pf_key_info;// = get_foreign_key_info(thd, *it);
+    FOREIGN_KEY_INFO*	pf_key_info = get_foreign_key_info(thd, *it);
     if (pf_key_info) {
       f_key_list->push_back(pf_key_info);
     }

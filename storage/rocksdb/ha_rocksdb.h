@@ -304,6 +304,17 @@ const char *const RDB_TTL_COL_QUALIFIER = "ttl_col";
 #define HA_ERR_ROCKSDB_STATUS_TRY_AGAIN (HA_ERR_LAST + 25)
 #define HA_ERR_ROCKSDB_LAST HA_ERR_ROCKSDB_STATUS_TRY_AGAIN
 
+/** The flags for ON_UPDATE and ON_DELETE can be ORed; the default is that
+a foreign key constraint is enforced, therefore RESTRICT just means no flag */
+/* @{ */
+#define DICT_FOREIGN_ON_DELETE_CASCADE	1	/*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_DELETE_SET_NULL	2	/*!< ON UPDATE SET NULL */
+#define DICT_FOREIGN_ON_UPDATE_CASCADE	4	/*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_UPDATE_SET_NULL	8	/*!< ON UPDATE SET NULL */
+#define DICT_FOREIGN_ON_DELETE_NO_ACTION 16	/*!< ON DELETE NO ACTION */
+#define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32	/*!< ON UPDATE NO ACTION */
+/* @} */
+
 /**
   @brief
   Rdb_table_handler is a reference-counted structure storing information for
