@@ -4176,6 +4176,14 @@ int Rdb_ddl_manager::put_and_write(Rdb_tbl_def *const tbl,
   return HA_EXIT_SUCCESS;
 }
 
+void Rdb_ddl_manager::put_fk_def(
+  rocksdb::WriteBatch *const batch,
+  const GL_INDEX_ID &foreign_gl_index_id,
+  const GL_INDEX_ID &referenced_gl_index_id,
+  const uint32_t &type) {
+  m_dict->put_fk_def(batch, foreign_gl_index_id, referenced_gl_index_id, type);
+}
+
 /* Return 0 - ok, other value - error */
 /* TODO:
   This function modifies m_ddl_hash and m_index_num_to_keydef.

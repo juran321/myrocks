@@ -1147,6 +1147,11 @@ public:
   /* Modify the mapping and write it to on-disk storage */
   int put_and_write(Rdb_tbl_def *const key_descr,
                     rocksdb::WriteBatch *const batch);
+  /* 2018/06/11 Quan Zhang FK Index => RF Index under the */
+  void put_fk_def(rocksdb::WriteBatch *const batch, const GL_INDEX_ID &foreign_gl_index_id,
+                                    const GL_INDEX_ID &referenced_gl_index_id,
+                                    const uint32_t &type);
+
   void remove(Rdb_tbl_def *const rec, rocksdb::WriteBatch *const batch,
               const bool &lock = true);
   bool rename(const std::string &from, const std::string &to,

@@ -7239,10 +7239,10 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
     DBUG_RETURN(err);
   }
 
+  bool has_foreign_key = false;
+
   if (contains_foreign_key(thd)) {
-    my_error(ER_NOT_SUPPORTED_YET, MYF(0),
-             "FOREIGN KEY for the RocksDB storage engine");
-    DBUG_RETURN(HA_ERR_UNSUPPORTED);
+    has_foreign_key = true;
   }
 
   const std::unique_ptr<rocksdb::WriteBatch> wb = dict_manager.begin();
@@ -7283,6 +7283,135 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       if (!s.ok()) {
         goto error;
       }
+    }
+  }
+
+  if (has_foreign_key) {
+    bool success;
+    const char *str = thd_query_string(thd)->str;
+
+    DBUG_ASSERT(str != nullptr);
+
+    while (*str != '\0') {
+
+      // Skip past the found "FOREIGN'
+      str = rdb_check_next_token(&my_charset_bin, str, "FOREIGN", &success);
+      DBUG_ASSERT(success);
+
+      if (!my_isspace(&my_charset_bin, *str)) {
+        continue;
+      }
+
+      // See if the next token is 'KEY'
+      str = rdb_check_next_token(&my_charset_bin, str, "KEY", &success);
+      if (!success) {
+        continue;
+      }
+
+      // See if the next token is '('
+      str = rdb_check_next_token(&my_charset_bin, str, "(", &success);
+      if (!success) {
+        // There is an optional index id after 'FOREIGN KEY', skip it
+        str = rdb_skip_id(&my_charset_bin, str);
+
+        // Now check for '(' again
+        str = rdb_check_next_token(&my_charset_bin, str, "(", &success);
+
+        if (!success) {
+          continue;
+        }
+      }
+
+      // TODO: handle multple foreign key columns
+      Rdb_fk_def fk_def;
+      std::string col_name;
+      rdb_parse_id(&my_charset_bin, str, &col_name);
+      for (uint keyno = 0; keyno < m_tbl_def->m_key_count; keyno++) {
+        if (m_key_descr_arr[keyno]->get_name() == col_name) {
+          fk_def.m_foreign_gl_index_id = m_key_descr_arr[keyno]->get_gl_index_id();
+          break;
+        }
+      }
+
+      str = rdb_check_next_token(&my_charset_bin, str, ")", &success);
+      if (!success) {
+        continue;
+      }
+
+      // See if the next token is 'REFERENCES'
+      str = rdb_check_next_token(&my_charset_bin, str, "REFERENCES", &success);
+      if (!success) {
+        continue;
+      }
+
+      std::string referenced_table_name;
+      rdb_parse_id(&my_charset_bin, str, &referenced_table_name);
+      auto referenced_tdef = ddl_manager.find(referenced_table_name);
+
+      str = rdb_check_next_token(&my_charset_bin, str, "(", &success);
+      if (!success) {
+        continue;
+      }
+
+      std::string ref_col_name;
+      rdb_parse_id(&my_charset_bin, str, &ref_col_name);
+      for (uint keyno = 0; keyno < referenced_tdef->m_key_count; keyno++) {
+        if (referenced_tdef->m_key_descr_arr[keyno]->get_name() == ref_col_name) {
+          fk_def.m_referenced_gl_index_id = referenced_tdef->m_key_descr_arr[keyno]->get_gl_index_id();
+          break;
+        }
+      }
+
+      str = rdb_check_next_token(&my_charset_bin, str, ")", &success);
+      if (!success) {
+        continue;
+      }
+
+      uint32_t type = DICT_FOREIGN_ON_DELETE_SET_NULL | DICT_FOREIGN_ON_UPDATE_SET_NULL;
+      bool is_on_delete = false;
+
+      str = rdb_check_next_token(&my_charset_bin, str, "ON", &success);
+      if (success) {
+        str = rdb_check_next_token(&my_charset_bin, str, "DELETE", &success);
+        if (!success) {
+          str = rdb_check_next_token(&my_charset_bin, str, "UPDATE", &success);
+          if (!success) {
+            continue;
+          }
+          is_on_delete = false;
+        } else {
+          is_on_delete = true;
+        }
+      }
+
+      str = rdb_check_next_token(&my_charset_bin, str, "RESTRICT", &success);
+      if (success) {
+        str = rdb_check_next_token(&my_charset_bin, str, "CASCADE", &success);
+        if (success) {
+          if (is_on_delete) {
+            type |= DICT_FOREIGN_ON_DELETE_CASCADE;
+          } else {
+            type |= DICT_FOREIGN_ON_UPDATE_CASCADE;
+          }
+        }
+      }
+
+      str = rdb_check_next_token(&my_charset_bin, str, "NO", &success);
+      if (success) {
+        str = rdb_check_next_token(&my_charset_bin, str, "ACTION", &success);
+        if (success) {
+          if (is_on_delete) {
+            type |= DICT_FOREIGN_ON_DELETE_NO_ACTION;
+          } else {
+            type |= DICT_FOREIGN_ON_UPDATE_NO_ACTION;
+          }
+        }
+      }
+
+      ddl_manager.put_fk_def(batch, fk_def.m_foreign_gl_index_id, fk_def.m_referenced_gl_index_id, type);
+      fk_def.m_type = type;
+      m_tbl_def->m_foreign_descr_set.insert(fk_def);
+      referenced_tdef->m_referenced_descr_set.insert(fk_def);
     }
   }
 
