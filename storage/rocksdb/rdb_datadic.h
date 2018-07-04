@@ -204,6 +204,11 @@ public:
   /* Pack the hidden primary key into mem-comparable form. */
   uint pack_hidden_pk(const longlong &hidden_pk_id,
                       uchar *const packed_tuple) const;
+  /* 2018/07/03 Quan Zhang Convert a key from record format in the foreign/referenced table to the referenced/foreign table key as mem-comparable form. */
+  uint pack_foreign_key(const TABLE *const foreign_tbl, const TABLE *const referenced_tbl,
+                   const Rdb_key_def& foreign_key_def,
+                   uchar *const pack_buffer, const uchar *const record,
+                   uchar *const packed_tuple) const;
   int unpack_field(Rdb_field_packing *const fpi,
                    Field *const             field,
                    Rdb_string_reader*       reader,
@@ -657,6 +662,8 @@ public:
   int skip_variable_space_pad(const Rdb_field_packing *const fpi,
                               const Field *const field,
                               Rdb_string_reader *const reader) const;
+
+  Rdb_field_packing* get_field_packing() const { return m_pack_info; }
 
   inline bool use_legacy_varbinary_format() const {
     return !index_format_min_check(PRIMARY_FORMAT_VERSION_UPDATE2,

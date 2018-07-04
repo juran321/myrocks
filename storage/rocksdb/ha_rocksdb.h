@@ -341,6 +341,9 @@ struct Rdb_table_handler {
   uint64_t m_mtcache_count;
   uint64_t m_mtcache_size;
   uint64_t m_mtcache_last_update;
+
+  // 2018/07/02 Quan Zhang Have a copy of table definition here
+  TABLE* m_table;
 };
 
 class Rdb_key_def;

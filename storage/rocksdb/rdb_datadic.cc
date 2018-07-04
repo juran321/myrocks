@@ -1193,6 +1193,54 @@ uint Rdb_key_def::pack_record(
   return tuple - packed_tuple;
 }
 
+uint Rdb_key_def::pack_foreign_key(
+    const TABLE *const foreign_tbl, const TABLE *const tbl,
+    const Rdb_key_def& foreign_key_def,
+    uchar *const pack_buffer, const uchar *const record,
+    uchar *const packed_tuple) const {
+  DBUG_ASSERT(foreign_tbl != nullptr);
+  DBUG_ASSERT(tbl != nullptr);
+  DBUG_ASSERT(pack_buffer != nullptr);
+  DBUG_ASSERT(record != nullptr);
+  DBUG_ASSERT(packed_tuple != nullptr);
+
+  uchar *tuple = packed_tuple;
+  rdb_netbuf_store_index(tuple, m_index_number);
+  tuple += INDEX_NUMBER_SIZE;
+
+  const bool hidden_pk_exists = table_has_hidden_pk(tbl);
+  uint n_key_parts = hidden_pk_exists ? m_key_parts - 1 : m_key_parts;
+  for (uint i = 0; i < n_key_parts; i++) {
+    Field *const foreign_field = foreign_key_def.get_field_packing()[i].get_field_in_table(foreign_tbl);
+    DBUG_ASSERT(foreign_field != nullptr);
+
+    uint field_offset = foreign_field->ptr - foreign_tbl->record[0];
+    uint null_offset = foreign_field->null_offset(foreign_tbl->record[0]);
+
+    Field *const field = m_pack_info[i].get_field_in_table(tbl);
+    DBUG_ASSERT(field != nullptr);
+    bool maybe_null = field->real_maybe_null();
+
+    foreign_field->move_field(const_cast<uchar*>(record) + field_offset,
+        maybe_null ? const_cast<uchar*>(record) + null_offset : nullptr,
+        foreign_field->null_bit);
+
+    // WARNING! Don't return without restoring field->ptr and field->null_ptr
+    tuple = pack_field(foreign_field, &m_pack_info[i], tuple, packed_tuple, pack_buffer,
+                       nullptr, nullptr);
+
+    bool foreign_maybe_null = foreign_field->real_maybe_null();
+    // Restore field->ptr and field->null_ptr
+    foreign_field->move_field(foreign_tbl->record[0] + field_offset,
+                      foreign_maybe_null ? foreign_tbl->record[0] + null_offset : nullptr,
+                      foreign_field->null_bit);
+  }
+
+  DBUG_ASSERT(is_storage_available(tuple - packed_tuple, 0));
+
+  return tuple - packed_tuple;
+}
+
 /**
   Pack the hidden primary key into mem-comparable form.
 
@@ -4842,17 +4890,16 @@ void Rdb_dict_manager::get_fk_defs(
 
   rocksdb::Iterator *it = new_iterator();
   for (it->Seek(index_slice); it->Valid(); it->Next()) {
-    rocksdb::Slice key = it->key();
-
-    const uchar *const ptr = (const uchar *)key.data();
+    const rocksdb::Slice val = it->value();
+    const uchar *const ptr = (const uchar *)val.data();
 
     Rdb_fk_def fk_def;
     fk_def.m_foreign_gl_index_id = gl_index_id;
     fk_def.m_referenced_gl_index_id.cf_id =
-        rdb_netbuf_to_uint32(ptr + Rdb_key_def::INDEX_NUMBER_SIZE);
+        rdb_netbuf_to_uint32(ptr);
     fk_def.m_referenced_gl_index_id.index_id =
-        rdb_netbuf_to_uint32(ptr + 2 * Rdb_key_def::INDEX_NUMBER_SIZE);
-    fk_def.m_type = rdb_netbuf_to_uint32(ptr + 3 * Rdb_key_def::INDEX_NUMBER_SIZE);
+        rdb_netbuf_to_uint32(ptr + Rdb_key_def::INDEX_NUMBER_SIZE);
+    fk_def.m_type = rdb_netbuf_to_uint32(ptr + 2 * Rdb_key_def::INDEX_NUMBER_SIZE);
     fk_def_vec.push_back(fk_def);
   }
   delete it;
