@@ -1214,6 +1214,7 @@ uint Rdb_key_def::pack_foreign_key(
     Field *const foreign_field = foreign_key_def.get_field_packing()[i].get_field_in_table(foreign_tbl);
     DBUG_ASSERT(foreign_field != nullptr);
 
+    bool foreign_maybe_null = foreign_field->real_maybe_null();
     uint field_offset = foreign_field->ptr - foreign_tbl->record[0];
     uint null_offset = foreign_field->null_offset(foreign_tbl->record[0]);
 
@@ -1223,13 +1224,12 @@ uint Rdb_key_def::pack_foreign_key(
 
     foreign_field->move_field(const_cast<uchar*>(record) + field_offset,
         maybe_null ? const_cast<uchar*>(record) + null_offset : nullptr,
-        foreign_field->null_bit);
+        field->null_bit);
 
     // WARNING! Don't return without restoring field->ptr and field->null_ptr
     tuple = pack_field(foreign_field, &m_pack_info[i], tuple, packed_tuple, pack_buffer,
                        nullptr, nullptr);
 
-    bool foreign_maybe_null = foreign_field->real_maybe_null();
     // Restore field->ptr and field->null_ptr
     foreign_field->move_field(foreign_tbl->record[0] + field_offset,
                       foreign_maybe_null ? foreign_tbl->record[0] + null_offset : nullptr,
@@ -4861,10 +4861,11 @@ bool Rdb_dict_manager::get_index_info(
 }
 
 void Rdb_dict_manager::put_fk_def(
-  rocksdb::WriteBatch *const batch,
-  const GL_INDEX_ID &foreign_gl_index_id,
-  const GL_INDEX_ID &referenced_gl_index_id,
-  const uint32_t &type) {
+    rocksdb::WriteBatch *const batch,
+    const GL_INDEX_ID &foreign_gl_index_id,
+    const GL_INDEX_ID &referenced_gl_index_id,
+    const uint32_t &type) {
+
   uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3] = {0};
   uchar value_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3] = {0};
   rdb_netbuf_store_uint32(key_buf, Rdb_key_def::FK_DEFINITION);
@@ -4881,8 +4882,8 @@ void Rdb_dict_manager::put_fk_def(
 }
 
 void Rdb_dict_manager::get_fk_defs(
-  const GL_INDEX_ID &gl_index_id,
-  struct std::vector<Rdb_fk_def> &fk_def_vec) const {
+    const GL_INDEX_ID &gl_index_id,
+    struct std::vector<Rdb_fk_def> &fk_def_vec) const {
 
   uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3] = {0};
   dump_index_id(key_buf, Rdb_key_def::FK_DEFINITION, gl_index_id);
@@ -4890,13 +4891,21 @@ void Rdb_dict_manager::get_fk_defs(
 
   rocksdb::Iterator *it = new_iterator();
   for (it->Seek(index_slice); it->Valid(); it->Next()) {
+    const rocksdb::Slice key = it->key();
     const rocksdb::Slice val = it->value();
-    const uchar *const ptr = (const uchar *)val.data();
+
+    const uchar * ptr = (const uchar *)key.data();
 
     Rdb_fk_def fk_def;
-    fk_def.m_foreign_gl_index_id = gl_index_id;
-    fk_def.m_referenced_gl_index_id.cf_id =
-        rdb_netbuf_to_uint32(ptr);
+    fk_def.m_foreign_gl_index_id.cf_id =
+        rdb_netbuf_to_uint32(ptr + Rdb_key_def::INDEX_NUMBER_SIZE);
+    fk_def.m_foreign_gl_index_id.index_id =
+        rdb_netbuf_to_uint32(ptr + 2 * Rdb_key_def::INDEX_NUMBER_SIZE);
+    if (fk_def.m_foreign_gl_index_id != gl_index_id) {
+      break;
+    }
+    ptr = (const uchar *)val.data();
+    fk_def.m_referenced_gl_index_id.cf_id = rdb_netbuf_to_uint32(ptr);
     fk_def.m_referenced_gl_index_id.index_id =
         rdb_netbuf_to_uint32(ptr + Rdb_key_def::INDEX_NUMBER_SIZE);
     fk_def.m_type = rdb_netbuf_to_uint32(ptr + 2 * Rdb_key_def::INDEX_NUMBER_SIZE);

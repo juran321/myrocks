@@ -9109,6 +9109,61 @@ int ha_rocksdb::get_pk_for_update(struct update_row_info *const row_info) {
   return HA_EXIT_SUCCESS;
 }
 
+int ha_rocksdb::check_fk_constraint_on_referenced_table(const uint &key_id,
+                                                        const Rdb_key_def &fk_index,
+                                                        const struct update_row_info &row_info) {
+  uchar lower_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
+  uchar upper_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
+  rocksdb::Slice lower_bound_slice;
+  rocksdb::Slice upper_bound_slice;
+
+  // 2018/06/27 Quan Zhang check foreign key constraints
+  for (auto& fk_def : m_tbl_def->m_foreign_descr_set) {
+    if (m_key_descr_arr[key_id]->get_gl_index_id() == fk_def.m_foreign_gl_index_id) {
+      // check if referenced table has the same key
+      std::shared_ptr<const Rdb_key_def> referenced_key_def = ddl_manager.safe_find(fk_def.m_referenced_gl_index_id);
+      std::string referenced_dbname_tablename = ddl_manager.safe_get_table_name(fk_def.m_referenced_gl_index_id);
+      std::string referenced_dbname;
+      std::string referenced_tablename;
+      int rc = rdb_split_normalized_tablename(referenced_dbname_tablename, &referenced_dbname, &referenced_tablename);
+      if (rc != HA_EXIT_SUCCESS) {
+        DBUG_RETURN(rc);
+      }
+      std::string referenced_name = "./" + referenced_dbname + "/" + referenced_tablename;
+      Rdb_table_handler *referenced_table_handler = rdb_open_tables.get_table_handler(referenced_name.c_str());
+      TABLE* referenced_table = referenced_table_handler->m_table;
+      uchar *referenced_key_buf =
+        reinterpret_cast<uchar *>(my_malloc(referenced_key_def->max_storage_fmt_length(), MYF(0)));
+      uchar *referenced_key_packed_tuple =
+        reinterpret_cast<uchar *>(my_malloc(referenced_key_def->max_storage_fmt_length(), MYF(0)));
+      int size = referenced_key_def->pack_foreign_key(table, referenced_table, fk_index, referenced_key_buf, row_info.new_data,
+                          referenced_key_packed_tuple);
+      const rocksdb::Slice referenced_key =
+        rocksdb::Slice((const char *)referenced_key_packed_tuple, size);
+
+      const bool total_order_seek = !check_bloom_and_set_bounds(
+        ha_thd(), *referenced_key_def, referenced_key, false, Rdb_key_def::INDEX_NUMBER_SIZE,
+        lower_bound_buf, upper_bound_buf, &lower_bound_slice, &upper_bound_slice);
+      const bool fill_cache = !THDVAR(ha_thd(), skip_fill_cache);
+
+      rocksdb::Iterator *const iter = row_info.tx->get_iterator(
+        referenced_key_def->get_cf(), total_order_seek, fill_cache, lower_bound_slice,
+        upper_bound_slice, true /* read current data */,
+        false /* acquire snapshot */);
+
+      iter->Seek(referenced_key);
+      bool found = !read_key_exact(*referenced_key_def, iter, false, referenced_key,
+                           row_info.tx->m_snapshot_timestamp);
+      delete iter;
+      if (!found) {
+        return HA_ERR_NO_REFERENCED_ROW;
+      }
+      break;
+    }
+  }
+  return HA_EXIT_SUCCESS;
+}
+
 int ha_rocksdb::check_and_lock_unique_pk(const uint &key_id,
                                          const struct update_row_info &row_info,
                                          bool *const found,
@@ -9134,54 +9189,9 @@ int ha_rocksdb::check_and_lock_unique_pk(const uint &key_id,
     *pk_changed = true;
   }
 
-  uchar lower_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
-  uchar upper_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
-  rocksdb::Slice lower_bound_slice;
-  rocksdb::Slice upper_bound_slice;
-
-  // 2018/06/27 Quan Zhang check foreign key constraints
-  for (auto& fk_def : m_tbl_def->m_foreign_descr_set) {
-    if (m_key_descr_arr[key_id]->get_gl_index_id() == fk_def.m_foreign_gl_index_id) {
-      // check if referenced table has the same key
-      std::shared_ptr<const Rdb_key_def> referenced_key_def = ddl_manager.safe_find(fk_def.m_referenced_gl_index_id);
-      std::string referenced_dbname_tablename = ddl_manager.safe_get_table_name(fk_def.m_referenced_gl_index_id);
-      std::string referenced_dbname;
-      std::string referenced_tablename;
-      int rc = rdb_split_normalized_tablename(referenced_dbname_tablename, &referenced_dbname, &referenced_tablename);
-      if (rc != HA_EXIT_SUCCESS) {
-        DBUG_RETURN(rc);
-      }
-      std::string referenced_name = "./" + referenced_dbname + "/" + referenced_tablename;
-      Rdb_table_handler *referenced_table_handler = rdb_open_tables.get_table_handler(referenced_name.c_str());
-      TABLE* referenced_table = referenced_table_handler->m_table;
-      uchar *referenced_key_buf =
-        reinterpret_cast<uchar *>(my_malloc(referenced_key_def->max_storage_fmt_length(), MYF(0)));
-      uchar *referenced_key_packed_tuple =
-        reinterpret_cast<uchar *>(my_malloc(referenced_key_def->max_storage_fmt_length(), MYF(0)));
-      int size = referenced_key_def->pack_foreign_key(table, referenced_table, *m_pk_descr, referenced_key_buf, row_info.new_data,
-                          referenced_key_packed_tuple);
-      const rocksdb::Slice referenced_key =
-        rocksdb::Slice((const char *)referenced_key_packed_tuple, size);
-
-      const bool total_order_seek = !check_bloom_and_set_bounds(
-        ha_thd(), *referenced_key_def, referenced_key, false, Rdb_key_def::INDEX_NUMBER_SIZE,
-        lower_bound_buf, upper_bound_buf, &lower_bound_slice, &upper_bound_slice);
-      const bool fill_cache = !THDVAR(ha_thd(), skip_fill_cache);
-
-      rocksdb::Iterator *const iter = row_info.tx->get_iterator(
-        referenced_key_def->get_cf(), total_order_seek, fill_cache, lower_bound_slice,
-        upper_bound_slice, true /* read current data */,
-        false /* acquire snapshot */);
-
-      iter->Seek(referenced_key);
-      bool found = !read_key_exact(*referenced_key_def, iter, false, referenced_key,
-                           row_info.tx->m_snapshot_timestamp);
-      delete iter;
-      if (!found) {
-        return HA_ERR_NO_REFERENCED_ROW;
-      }
-      break;
-    }
+  int rc = check_fk_constraint_on_referenced_table(key_id, *m_pk_descr, row_info);
+  if (rc != HA_EXIT_SUCCESS) {
+    return rc;
   }
 
   /*
@@ -9230,54 +9240,9 @@ int ha_rocksdb::check_and_lock_sk(const uint &key_id,
 
   const Rdb_key_def &kd = *m_key_descr_arr[key_id];
 
-  uchar lower_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
-  uchar upper_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
-  rocksdb::Slice lower_bound_slice;
-  rocksdb::Slice upper_bound_slice;
-
-  // 2018/06/27 Quan Zhang check foreign key constraints
-  for (auto& fk_def : m_tbl_def->m_foreign_descr_set) {
-    if (m_key_descr_arr[key_id]->get_gl_index_id() == fk_def.m_foreign_gl_index_id) {
-      // check if referenced table has the same key
-      std::shared_ptr<const Rdb_key_def> referenced_key_def = ddl_manager.safe_find(fk_def.m_referenced_gl_index_id);
-      std::string referenced_dbname_tablename = ddl_manager.safe_get_table_name(fk_def.m_referenced_gl_index_id);
-      std::string referenced_dbname;
-      std::string referenced_tablename;
-      int rc = rdb_split_normalized_tablename(referenced_dbname_tablename, &referenced_dbname, &referenced_tablename);
-      if (rc != HA_EXIT_SUCCESS) {
-        DBUG_RETURN(rc);
-      }
-      std::string referenced_name = "./" + referenced_dbname + "/" + referenced_tablename;
-      Rdb_table_handler *referenced_table_handler = rdb_open_tables.get_table_handler(referenced_name.c_str());
-      TABLE* referenced_table = referenced_table_handler->m_table;
-      uchar *referenced_key_buf =
-        reinterpret_cast<uchar *>(my_malloc(referenced_key_def->max_storage_fmt_length(), MYF(0)));
-      uchar *referenced_key_packed_tuple =
-        reinterpret_cast<uchar *>(my_malloc(referenced_key_def->max_storage_fmt_length(), MYF(0)));
-      int size = referenced_key_def->pack_foreign_key(table, referenced_table, kd, referenced_key_buf, row_info.new_data,
-                          referenced_key_packed_tuple);
-      const rocksdb::Slice referenced_key =
-        rocksdb::Slice((const char *)referenced_key_packed_tuple, size);
-
-      const bool total_order_seek = !check_bloom_and_set_bounds(
-        ha_thd(), *referenced_key_def, referenced_key, false, Rdb_key_def::INDEX_NUMBER_SIZE,
-        lower_bound_buf, upper_bound_buf, &lower_bound_slice, &upper_bound_slice);
-      const bool fill_cache = !THDVAR(ha_thd(), skip_fill_cache);
-
-      rocksdb::Iterator *const iter = row_info.tx->get_iterator(
-        referenced_key_def->get_cf(), total_order_seek, fill_cache, lower_bound_slice,
-        upper_bound_slice, true /* read current data */,
-        false /* acquire snapshot */);
-
-      iter->Seek(referenced_key);
-      bool found = !read_key_exact(*referenced_key_def, iter, false, referenced_key,
-                           row_info.tx->m_snapshot_timestamp);
-      delete iter;
-      if (!found) {
-        return HA_ERR_NO_REFERENCED_ROW;
-      }
-      break;
-    }
+  int rc = check_fk_constraint_on_referenced_table(key_id, kd, row_info);
+  if (rc != HA_EXIT_SUCCESS) {
+    return rc;
   }
 
   uint n_null_fields = 0;
@@ -9350,6 +9315,10 @@ int ha_rocksdb::check_and_lock_sk(const uint &key_id,
   */
 
   const bool all_parts_used = (user_defined_key_parts == kd.get_key_parts());
+  uchar lower_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
+  uchar upper_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
+  rocksdb::Slice lower_bound_slice;
+  rocksdb::Slice upper_bound_slice;
 
   /*
     This iterator seems expensive since we need to allocate and free
