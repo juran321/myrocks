@@ -204,9 +204,9 @@ public:
   /* Pack the hidden primary key into mem-comparable form. */
   uint pack_hidden_pk(const longlong &hidden_pk_id,
                       uchar *const packed_tuple) const;
-  /* 2018/07/03 Quan Zhang Convert a key from record format in the foreign/referenced table to the referenced/foreign table key as mem-comparable form. */
-  uint pack_foreign_key(const TABLE *const foreign_tbl, const TABLE *const referenced_tbl,
-                   const Rdb_key_def& foreign_key_def,
+  /* 2018/07/03 Quan Zhang Convert a key from record format in other table to the key as mem-comparable form. */
+  uint pack_key_from_other_table(const TABLE *const other_tbl, const TABLE *const my_tbl,
+                   const Rdb_key_def& other_tbl_key_def,
                    uchar *const pack_buffer, const uchar *const record,
                    uchar *const packed_tuple) const;
   int unpack_field(Rdb_field_packing *const fpi,
@@ -974,7 +974,7 @@ inline bool Rdb_key_def::has_unpack_info(const uint &kp) const {
 
 // 2018/06/07 Quan Zhang A foreign key definition
 struct Rdb_fk_def {
-  /* foreign  index */
+  /* foreign index */
   GL_INDEX_ID m_foreign_gl_index_id;
   /* referenced index*/
   GL_INDEX_ID m_referenced_gl_index_id;

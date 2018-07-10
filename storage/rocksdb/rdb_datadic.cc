@@ -1193,13 +1193,13 @@ uint Rdb_key_def::pack_record(
   return tuple - packed_tuple;
 }
 
-uint Rdb_key_def::pack_foreign_key(
-    const TABLE *const foreign_tbl, const TABLE *const tbl,
-    const Rdb_key_def& foreign_key_def,
+uint Rdb_key_def::pack_key_from_other_table(
+    const TABLE *const other_tbl, const TABLE *const my_tbl,
+    const Rdb_key_def& other_tbl_key_def,
     uchar *const pack_buffer, const uchar *const record,
     uchar *const packed_tuple) const {
-  DBUG_ASSERT(foreign_tbl != nullptr);
-  DBUG_ASSERT(tbl != nullptr);
+  DBUG_ASSERT(other_tbl != nullptr);
+  DBUG_ASSERT(my_tbl != nullptr);
   DBUG_ASSERT(pack_buffer != nullptr);
   DBUG_ASSERT(record != nullptr);
   DBUG_ASSERT(packed_tuple != nullptr);
@@ -1208,32 +1208,32 @@ uint Rdb_key_def::pack_foreign_key(
   rdb_netbuf_store_index(tuple, m_index_number);
   tuple += INDEX_NUMBER_SIZE;
 
-  const bool hidden_pk_exists = table_has_hidden_pk(tbl);
+  const bool hidden_pk_exists = table_has_hidden_pk(my_tbl);
   uint n_key_parts = hidden_pk_exists ? m_key_parts - 1 : m_key_parts;
   for (uint i = 0; i < n_key_parts; i++) {
-    Field *const foreign_field = foreign_key_def.get_field_packing()[i].get_field_in_table(foreign_tbl);
-    DBUG_ASSERT(foreign_field != nullptr);
+    Field *const other_tbl_field = other_tbl_key_def.get_field_packing()[i].get_field_in_table(other_tbl);
+    DBUG_ASSERT(other_tbl_field != nullptr);
 
-    bool foreign_maybe_null = foreign_field->real_maybe_null();
-    uint field_offset = foreign_field->ptr - foreign_tbl->record[0];
-    uint null_offset = foreign_field->null_offset(foreign_tbl->record[0]);
+    bool other_tbl_field_maybe_null = other_tbl_field->real_maybe_null();
+    uint other_tbl_field_offset = other_tbl_field->ptr - other_tbl->record[0];
+    uint other_tbl_field_null_offset = other_tbl_field->null_offset(other_tbl->record[0]);
 
-    Field *const field = m_pack_info[i].get_field_in_table(tbl);
+    Field *const field = m_pack_info[i].get_field_in_table(my_tbl);
     DBUG_ASSERT(field != nullptr);
     bool maybe_null = field->real_maybe_null();
 
-    foreign_field->move_field(const_cast<uchar*>(record) + field_offset,
-        maybe_null ? const_cast<uchar*>(record) + null_offset : nullptr,
+    other_tbl_field->move_field(const_cast<uchar*>(record) + other_tbl_field_offset,
+        maybe_null ? const_cast<uchar*>(record) + other_tbl_field_null_offset : nullptr,
         field->null_bit);
 
     // WARNING! Don't return without restoring field->ptr and field->null_ptr
-    tuple = pack_field(foreign_field, &m_pack_info[i], tuple, packed_tuple, pack_buffer,
+    tuple = pack_field(other_tbl_field, &m_pack_info[i], tuple, packed_tuple, pack_buffer,
                        nullptr, nullptr);
 
     // Restore field->ptr and field->null_ptr
-    foreign_field->move_field(foreign_tbl->record[0] + field_offset,
-                      foreign_maybe_null ? foreign_tbl->record[0] + null_offset : nullptr,
-                      foreign_field->null_bit);
+    other_tbl_field->move_field(other_tbl->record[0] + other_tbl_field_offset,
+                      other_tbl_field_maybe_null ? other_tbl->record[0] + other_tbl_field_null_offset : nullptr,
+                      other_tbl_field->null_bit);
   }
 
   DBUG_ASSERT(is_storage_available(tuple - packed_tuple, 0));

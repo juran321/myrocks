@@ -9109,57 +9109,95 @@ int ha_rocksdb::get_pk_for_update(struct update_row_info *const row_info) {
   return HA_EXIT_SUCCESS;
 }
 
-int ha_rocksdb::check_fk_constraint_on_referenced_table(const uint &key_id,
-                                                        const Rdb_key_def &fk_index,
-                                                        const struct update_row_info &row_info) {
+// check if other table has the same key in the given index
+int ha_rocksdb::check_key_in_other_table(const Rdb_key_def &my_key_def,
+                                         const GL_INDEX_ID &my_gl_index_id,
+                                         const GL_INDEX_ID &other_tbl_gl_index_id,
+                                         const uchar *const record,
+                                         Rdb_transaction* tx) {
+  std::shared_ptr<const Rdb_key_def> other_tbl_key_def = ddl_manager.safe_find(other_tbl_gl_index_id);
+  std::string other_dbname_tablename = ddl_manager.safe_get_table_name(other_tbl_gl_index_id);
+  std::string other_dbname;
+  std::string other_tablename;
+  int rc = rdb_split_normalized_tablename(other_dbname_tablename, &other_dbname, &other_tablename);
+  if (rc != HA_EXIT_SUCCESS) {
+    DBUG_RETURN(rc);
+  }
+  std::string other_full_table_name = "./" + other_dbname + "/" + other_tablename;
+  Rdb_table_handler *other_table_handler = rdb_open_tables.get_table_handler(other_full_table_name.c_str());
+  TABLE* other_table = other_table_handler->m_table;
+  uchar *other_tbl_key_buf =
+    reinterpret_cast<uchar *>(my_malloc(other_tbl_key_def->max_storage_fmt_length(), MYF(0)));
+  uchar *other_tbl_key_packed_tuple =
+    reinterpret_cast<uchar *>(my_malloc(other_tbl_key_def->max_storage_fmt_length(), MYF(0)));
+  int size = other_tbl_key_def->pack_key_from_other_table(table, other_table, my_key_def, other_tbl_key_buf, record,
+                      other_tbl_key_packed_tuple);
+  const rocksdb::Slice other_tbl_key =
+    rocksdb::Slice((const char *)other_tbl_key_packed_tuple, size);
+
   uchar lower_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
   uchar upper_bound_buf[Rdb_key_def::INDEX_NUMBER_SIZE];
   rocksdb::Slice lower_bound_slice;
   rocksdb::Slice upper_bound_slice;
 
+  const bool total_order_seek = !check_bloom_and_set_bounds(
+    ha_thd(), *other_tbl_key_def, other_tbl_key, false, Rdb_key_def::INDEX_NUMBER_SIZE,
+    lower_bound_buf, upper_bound_buf, &lower_bound_slice, &upper_bound_slice);
+  const bool fill_cache = !THDVAR(ha_thd(), skip_fill_cache);
+
+  rocksdb::Iterator *const iter = tx->get_iterator(
+    other_tbl_key_def->get_cf(), total_order_seek, fill_cache, lower_bound_slice,
+    upper_bound_slice, true /* read current data */,
+    false /* acquire snapshot */);
+
+  iter->Seek(other_tbl_key);
+  bool found = !read_key_exact(*other_tbl_key_def, iter, false, other_tbl_key,
+                      tx->m_snapshot_timestamp);
+  delete iter;
+  if (!found) {
+    return HA_EXIT_FAILURE;
+  }
+  return HA_EXIT_SUCCESS;
+}
+
+int ha_rocksdb::check_fk_constraint_on_referenced_table(const uint &key_id,
+                                                        const Rdb_key_def &kd,
+                                                        const struct update_row_info &row_info) {
   // 2018/06/27 Quan Zhang check foreign key constraints
   for (auto& fk_def : m_tbl_def->m_foreign_descr_set) {
     if (m_key_descr_arr[key_id]->get_gl_index_id() == fk_def.m_foreign_gl_index_id) {
       // check if referenced table has the same key
-      std::shared_ptr<const Rdb_key_def> referenced_key_def = ddl_manager.safe_find(fk_def.m_referenced_gl_index_id);
-      std::string referenced_dbname_tablename = ddl_manager.safe_get_table_name(fk_def.m_referenced_gl_index_id);
-      std::string referenced_dbname;
-      std::string referenced_tablename;
-      int rc = rdb_split_normalized_tablename(referenced_dbname_tablename, &referenced_dbname, &referenced_tablename);
-      if (rc != HA_EXIT_SUCCESS) {
-        DBUG_RETURN(rc);
-      }
-      std::string referenced_name = "./" + referenced_dbname + "/" + referenced_tablename;
-      Rdb_table_handler *referenced_table_handler = rdb_open_tables.get_table_handler(referenced_name.c_str());
-      TABLE* referenced_table = referenced_table_handler->m_table;
-      uchar *referenced_key_buf =
-        reinterpret_cast<uchar *>(my_malloc(referenced_key_def->max_storage_fmt_length(), MYF(0)));
-      uchar *referenced_key_packed_tuple =
-        reinterpret_cast<uchar *>(my_malloc(referenced_key_def->max_storage_fmt_length(), MYF(0)));
-      int size = referenced_key_def->pack_foreign_key(table, referenced_table, fk_index, referenced_key_buf, row_info.new_data,
-                          referenced_key_packed_tuple);
-      const rocksdb::Slice referenced_key =
-        rocksdb::Slice((const char *)referenced_key_packed_tuple, size);
-
-      const bool total_order_seek = !check_bloom_and_set_bounds(
-        ha_thd(), *referenced_key_def, referenced_key, false, Rdb_key_def::INDEX_NUMBER_SIZE,
-        lower_bound_buf, upper_bound_buf, &lower_bound_slice, &upper_bound_slice);
-      const bool fill_cache = !THDVAR(ha_thd(), skip_fill_cache);
-
-      rocksdb::Iterator *const iter = row_info.tx->get_iterator(
-        referenced_key_def->get_cf(), total_order_seek, fill_cache, lower_bound_slice,
-        upper_bound_slice, true /* read current data */,
-        false /* acquire snapshot */);
-
-      iter->Seek(referenced_key);
-      bool found = !read_key_exact(*referenced_key_def, iter, false, referenced_key,
-                           row_info.tx->m_snapshot_timestamp);
-      delete iter;
-      if (!found) {
+      int rc = check_key_in_other_table(kd, fk_def.m_foreign_gl_index_id,
+                                        fk_def.m_referenced_gl_index_id,
+                                        row_info.new_data,
+                                        row_info.tx
+                                        );
+      if (rc == HA_EXIT_FAILURE) {
         return HA_ERR_NO_REFERENCED_ROW;
+      } else if (rc != HA_EXIT_SUCCESS) {
+        DBUG_RETURN(rc);
       }
       break;
     }
+  }
+  return HA_EXIT_SUCCESS;
+}
+
+int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
+                         const Rdb_key_def &kd,
+                         const uchar *const record,
+                         Rdb_transaction* tx) {
+  // 2018/07/09 Quan Zhang check foreign key constraints on foreign table
+  for (auto& fk_def : m_tbl_def->m_referenced_descr_set) {
+    if (m_key_descr_arr[key_id]->get_gl_index_id() == fk_def.m_referenced_gl_index_id) {
+      // check if foreign table has the same key
+      int rc = check_key_in_other_table(kd, fk_def.m_referenced_gl_index_id,
+                                        fk_def.m_foreign_gl_index_id,
+                                        record,
+                                        tx
+                                        );
+    }
+    break;
   }
   return HA_EXIT_SUCCESS;
 }

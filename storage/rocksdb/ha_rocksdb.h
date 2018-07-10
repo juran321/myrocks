@@ -1207,8 +1207,20 @@ private:
                          const rocksdb::Slice *key,
                          struct unique_sk_buf_info *sk_info)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
-  int check_fk_constraint_on_referenced_table(const uint &key_id, const Rdb_key_def &fk_index, 
-                         const struct update_row_info &row_info)
+  int check_key_in_other_table(const Rdb_key_def &my_key_def,
+                               const GL_INDEX_ID &my_gl_index_id,
+                               const GL_INDEX_ID &foreign_gl_index_id,
+                               const uchar *const record,
+                               Rdb_transaction* tx)
+      MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
+  int check_fk_constraint_on_foreign_table(const uint &key_id,
+                                           const Rdb_key_def &kd,
+                                           const uchar *const record,
+                                           Rdb_transaction* tx)
+      MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
+  int check_fk_constraint_on_referenced_table(const uint &key_id,
+                                              const Rdb_key_def &kd,
+                                              const struct update_row_info &row_info)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
   int bulk_load_key(Rdb_transaction *const tx, const Rdb_key_def &kd,
                     const rocksdb::Slice &key, const rocksdb::Slice &value,
