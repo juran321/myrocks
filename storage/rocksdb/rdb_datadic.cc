@@ -1217,23 +1217,44 @@ uint Rdb_key_def::pack_key_from_other_table(
     bool other_tbl_field_maybe_null = other_tbl_field->real_maybe_null();
     uint other_tbl_field_offset = other_tbl_field->ptr - other_tbl->record[0];
     uint other_tbl_field_null_offset = other_tbl_field->null_offset(other_tbl->record[0]);
+    bool other_tbl_field_is_real_null = other_tbl_field->is_null_in_record(const_cast<uchar*>(record));
 
     Field *const field = m_pack_info[i].get_field_in_table(my_tbl);
     DBUG_ASSERT(field != nullptr);
     bool maybe_null = field->real_maybe_null();
 
-    other_tbl_field->move_field(const_cast<uchar*>(record) + other_tbl_field_offset,
-        maybe_null ? const_cast<uchar*>(record) + other_tbl_field_null_offset : nullptr,
-        field->null_bit);
+    other_tbl_field->move_field(const_cast<uchar*>(record) + other_tbl_field_offset);
 
-    // WARNING! Don't return without restoring field->ptr and field->null_ptr
-    tuple = pack_field(other_tbl_field, &m_pack_info[i], tuple, packed_tuple, pack_buffer,
-                       nullptr, nullptr);
+    bool pack = true;
+    if (maybe_null) {
+      DBUG_ASSERT(is_storage_available(tuple - packed_tuple, 1));
+      if (other_tbl_field_is_real_null) {
+        /* NULL value. store '\0' so that it sorts before non-NULL values */
+        *tuple++ = 0;
+        pack = false;
+      } else {
+        /* Not a NULL value. Store '1' */
+        *tuple++ = 1;
+      }
+    }
 
+    if (pack) {
+      Rdb_pack_field_context pack_ctx(nullptr);
+
+      // Set the offset for methods which do not take an offset as an argument
+      DBUG_ASSERT(is_storage_available(tuple - packed_tuple,
+                                      m_pack_info[i].m_max_image_len));
+
+      (this->*m_pack_info[i].m_pack_func)(&m_pack_info[i], other_tbl_field, pack_buffer, &tuple,
+                                      &pack_ctx);
+
+      // WARNING! Don't return without restoring field->ptr and field->null_ptr
+    }
     // Restore field->ptr and field->null_ptr
     other_tbl_field->move_field(other_tbl->record[0] + other_tbl_field_offset,
                       other_tbl_field_maybe_null ? other_tbl->record[0] + other_tbl_field_null_offset : nullptr,
                       other_tbl_field->null_bit);
+
   }
 
   DBUG_ASSERT(is_storage_available(tuple - packed_tuple, 0));

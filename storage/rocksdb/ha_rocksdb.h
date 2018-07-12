@@ -1209,14 +1209,20 @@ private:
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
   int check_key_in_other_table(const Rdb_key_def &my_key_def,
                                const GL_INDEX_ID &my_gl_index_id,
-                               const GL_INDEX_ID &foreign_gl_index_id,
-                               const uchar *const record,
-                               Rdb_transaction* tx)
-      MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
+                               const GL_INDEX_ID &other_gl_index_id,
+                               const uchar *const buf,
+                               Rdb_transaction *tx,
+                               bool *const found,
+                               Rdb_table_handler **const other_tbl_handler = nullptr,
+                               Rdb_tbl_def *const other_tbl_def = nullptr,
+                               std::unique_ptr<rocksdb::Iterator> *const other_tbl_iter = nullptr,
+                               bool *const is_other_tbl_index_pk = nullptr)
+      MY_ATTRIBUTE((__warn_unused_result__));
   int check_fk_constraint_on_foreign_table(const uint &key_id,
                                            const Rdb_key_def &kd,
-                                           const uchar *const record,
-                                           Rdb_transaction* tx)
+                                           const uchar *const buf,
+                                           Rdb_transaction *tx,
+                                           bool is_update)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
   int check_fk_constraint_on_referenced_table(const uint &key_id,
                                               const Rdb_key_def &kd,
