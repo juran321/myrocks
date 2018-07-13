@@ -9233,7 +9233,8 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
           }
           else if (fk_def.m_type & DICT_FOREIGN_ON_UPDATE_CASCADE) {
             // update the foreign key in the foreign table
-            // TODO: handler chaining cascade update
+            // TODO: add new buffer to complete the update
+            // TODO: handle chaining cascade update
             rocksdb::Slice foreign_key = foreign_tbl_it->key();
             std::shared_ptr<const Rdb_key_def> foreign_key_def = ddl_manager.safe_find(fk_def.m_foreign_gl_index_id);
             ulonglong bytes_written = 0;
@@ -9257,7 +9258,8 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
           }
           else if (fk_def.m_type & DICT_FOREIGN_ON_DELETE_CASCADE) {
             // delete the foreign key in the foreign table
-            // TODO: handler chaining cascade delete
+            // TODO: add multiple foreign keys here to handle multiple row delete
+            // TODO: handle chaining cascade delete
             rocksdb::Slice foreign_key = foreign_tbl_it->key();
             std::shared_ptr<const Rdb_key_def> foreign_key_def = ddl_manager.safe_find(fk_def.m_foreign_gl_index_id);
 
