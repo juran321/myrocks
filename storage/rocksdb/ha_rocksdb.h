@@ -1214,7 +1214,7 @@ private:
                                Rdb_transaction *tx,
                                bool *const found,
                                Rdb_table_handler **const other_tbl_handler = nullptr,
-                               Rdb_tbl_def *const other_tbl_def = nullptr,
+                               Rdb_tbl_def **const other_tbl_def = nullptr,
                                std::unique_ptr<rocksdb::Iterator> *const other_tbl_iter = nullptr,
                                bool *const is_other_tbl_index_pk = nullptr)
       MY_ATTRIBUTE((__warn_unused_result__));
@@ -1222,8 +1222,8 @@ private:
                                            const Rdb_key_def &kd,
                                            const uchar *const buf,
                                            Rdb_transaction *tx,
-                                           bool is_update)
-      MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
+                                           const bool is_update)
+      MY_ATTRIBUTE((__warn_unused_result__));
   int check_fk_constraint_on_referenced_table(const uint &key_id,
                                               const Rdb_key_def &kd,
                                               const struct update_row_info &row_info)

@@ -3920,6 +3920,8 @@ bool Rdb_ddl_manager::init(Rdb_dict_manager *const dict_arg,
   uint max_index_id_in_dict = 0;
   m_dict->get_max_index_id(&max_index_id_in_dict);
 
+  std::vector<Rdb_fk_def> fk_def_vec;
+
   for (it->Seek(ddl_entry_slice); it->Valid(); it->Next()) {
     const uchar *ptr;
     const uchar *ptr_end;
@@ -3992,7 +3994,6 @@ bool Rdb_ddl_manager::init(Rdb_dict_manager *const dict_arg,
                         gl_index_id.cf_id, tdef->full_tablename().c_str());
       }
 
-      std::vector<Rdb_fk_def> fk_def_vec;
       m_dict->get_fk_defs(gl_index_id, fk_def_vec);
 
       rocksdb::ColumnFamilyHandle *const cfh =
@@ -4018,22 +4019,27 @@ bool Rdb_ddl_manager::init(Rdb_dict_manager *const dict_arg,
           flags & Rdb_key_def::PER_PARTITION_CF_FLAG, "",
           m_dict->get_stats(gl_index_id), index_info.m_index_flags,
           ttl_rec_offset, index_info.m_ttl_duration);
-
-      for (auto &fk_def : fk_def_vec) {
-        tdef->m_foreign_descr_set.insert(fk_def);
-        auto it = m_index_num_to_keydef.find(fk_def.m_referenced_gl_index_id);
-
-        if (it != m_index_num_to_keydef.end()) {
-          const std::string& table_name = it->second.first;
-          auto referenced_tdef = find(table_name, false);
-          if (referenced_tdef != nullptr) {
-            referenced_tdef->m_referenced_descr_set.insert(fk_def);
-          }
-        }
-      }
     }
     put(tdef);
     i++;
+  }
+
+  for (auto &fk_def : fk_def_vec) {
+    auto foreign_tbl_it = m_index_num_to_keydef.find(fk_def.m_foreign_gl_index_id);
+
+    DBUG_ASSERT(foreign_tbl_it != m_index_num_to_keydef.end());
+    const std::string& foreign_table_name = foreign_tbl_it->second.first;
+    auto foreign_tdef = find(foreign_table_name, false);
+    DBUG_ASSERT(foreign_tdef != nullptr);
+    foreign_tdef->m_foreign_descr_set.insert(fk_def);
+
+    auto referenced_tbl_it = m_index_num_to_keydef.find(fk_def.m_referenced_gl_index_id);
+
+    DBUG_ASSERT(referenced_tbl_it != m_index_num_to_keydef.end());
+    const std::string& referenced_table_name = referenced_tbl_it->second.first;
+    auto referenced_tdef = find(referenced_table_name, false);
+    DBUG_ASSERT(referenced_tdef != nullptr);
+    referenced_tdef->m_referenced_descr_set.insert(fk_def);
   }
 
   /*
