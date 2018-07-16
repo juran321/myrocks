@@ -1220,7 +1220,8 @@ private:
       MY_ATTRIBUTE((__warn_unused_result__));
   int check_fk_constraint_on_foreign_table(const uint &key_id,
                                            const Rdb_key_def &kd,
-                                           const uchar *const buf,
+                                           const uchar *const old_data,
+                                           const uchar *const new_data,
                                            Rdb_transaction *tx,
                                            const bool is_update)
       MY_ATTRIBUTE((__warn_unused_result__));

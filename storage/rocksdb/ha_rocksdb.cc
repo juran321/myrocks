@@ -9201,7 +9201,8 @@ int ha_rocksdb::check_fk_constraint_on_referenced_table(const uint &key_id,
 
 int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
                          const Rdb_key_def &kd,
-                         const uchar *const buf,
+                         const uchar *const old_data,
+                         const uchar *const new_data,
                          Rdb_transaction *tx,
                          const bool is_update) {
   // 2018/07/09 Quan Zhang check foreign key constraints on foreign table
@@ -9215,7 +9216,7 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
       bool is_fk_pk;
       int rc = check_key_in_other_table(kd, fk_def.m_referenced_gl_index_id,
                                         fk_def.m_foreign_gl_index_id,
-                                        buf,
+                                        old_data,
                                         tx,
                                         &found,
                                         &foreign_tbl_handler,
@@ -9248,6 +9249,65 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
             tx->delete_key(foreign_key_def->get_cf(), foreign_key);
             bytes_written += foreign_key.size();
 
+            // pack new key in foreign table
+            // TODO: consider the variant db type update
+            uchar *foreign_tbl_key_buf =
+              reinterpret_cast<uchar *>(my_malloc(foreign_key_def->max_storage_fmt_length(), MYF(0)));
+            uchar *foreign_tbl_key_packed_tuple =
+              reinterpret_cast<uchar *>(my_malloc(foreign_key_def->max_storage_fmt_length(), MYF(0)));
+            memcpy(foreign_tbl_key_packed_tuple, foreign_key.data(), foreign_key.size());
+            foreign_key_def->pack_key_from_other_table(table,
+                                                       foreign_tbl_handler->m_table,
+                                                       kd,
+                                                       foreign_tbl_key_buf,
+                                                       new_data,
+                                foreign_tbl_key_packed_tuple);
+            rocksdb::Slice new_foreign_key =
+              rocksdb::Slice((const char *)foreign_tbl_key_packed_tuple, foreign_key.size());
+            // update secondary index in foreign table
+            tx->get_indexed_write_batch()->Put(foreign_key_def->get_cf(), new_foreign_key,
+                                            foreign_tbl_it->value());
+            bytes_written += foreign_key.size() + foreign_tbl_it->value().size();
+
+            if (!is_fk_pk) {
+              const uint fpk = pk_index(foreign_tbl_handler->m_table, foreign_tbl_def);
+              std::shared_ptr<Rdb_key_def> *foreign_key_descr_array = foreign_tbl_def->m_key_descr_arr;
+              uchar *fpk_packed_tuple = reinterpret_cast<uchar *>(my_malloc(
+                                                                  foreign_key_descr_array[fpk]->max_storage_fmt_length(),
+                                                                  YF(0)));
+              uint pk_size =
+                foreign_key_def->get_primary_key_tuple(foreign_tbl_handler->m_table,
+                                                       *foreign_key_descr_array[fpk],
+                                                       &foreign_key,
+                                                       fpk_packed_tuple);
+              rocksdb::Slice foreign_primary_key =
+                rocksdb::Slice((const char *)fpk_packed_tuple, pk_size);
+              rocksdb::Slice foreign_primary_value;
+              const rocksdb::Status s =
+                get_for_update(tx, foreign_key_descr_array[fpk]->get_cf(), foreign_primary_key, &foreign_primary_value);
+
+              if (!s.ok() && !s.IsNotFound()) {
+                return tx->set_status_error(
+                  foreign_tbl_handler->m_table->in_use, s, *foreign_key_descr_array[fpk], foreign_tbl_def, foreign_tbl_handler);
+              }
+              tx->delete_key(foreign_key_descr_array[fpk]->get_cf(), foreign_primary_key);
+              bytes_written += foreign_primary_key.size();
+
+              uchar *new_fpk_packed_tuple = reinterpret_cast<uchar *>(my_malloc(
+                                                                      foreign_key_descr_array[fpk]->max_storage_fmt_length(),
+                                                                      YF(0)));
+              pk_size =
+                foreign_key_def->get_primary_key_tuple(foreign_tbl_handler->m_table,
+                                                       *foreign_key_descr_array[fpk],
+                                                       &new_foreign_key,
+                                                       new_fpk_packed_tuple);
+              rocksdb::Slice new_foreign_primary_key =
+                rocksdb::Slice((const char *)new_fpk_packed_tuple, pk_size);
+              // update primary index in foreign table
+              tx->get_indexed_write_batch()->Put(foreign_key_descr_array[fpk]->get_cf(), new_foreign_key,
+                                            foreign_primary_value);
+              bytes_written += new_foreign_key.size() + foreign_primary_value.size();
+            }
             tx->incr_update_count();
             stats.rows_updated++;
             tx->update_bytes_written(bytes_written);
@@ -9269,9 +9329,14 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
             if (!is_fk_pk) {
               const uint fpk = pk_index(foreign_tbl_handler->m_table, foreign_tbl_def);
               std::shared_ptr<Rdb_key_def> *foreign_key_descr_array = foreign_tbl_def->m_key_descr_arr;
-              uchar *fpk_packed_tuple = reinterpret_cast<uchar *>(my_malloc(foreign_key_descr_array[fpk]->max_storage_fmt_length(), MYF(0)));
+              uchar *fpk_packed_tuple = reinterpret_cast<uchar *>(my_malloc(
+                                                                  foreign_key_descr_array[fpk]->max_storage_fmt_length(),
+                                                                  YF(0)));
               uint pk_size =
-                foreign_key_def->get_primary_key_tuple(foreign_tbl_handler->m_table, *foreign_key_descr_array[fpk], &foreign_key, fpk_packed_tuple);
+                foreign_key_def->get_primary_key_tuple(foreign_tbl_handler->m_table,
+                                                       *foreign_key_descr_array[fpk],
+                                                       &foreign_key,
+                                                       fpk_packed_tuple);
               rocksdb::Slice foreign_primary_key =
                 rocksdb::Slice((const char *)fpk_packed_tuple, pk_size);
               tx->delete_key(foreign_key_descr_array[fpk]->get_cf(), foreign_primary_key);
@@ -9498,6 +9563,7 @@ int ha_rocksdb::check_uniqueness_and_lock(
       rc = check_fk_constraint_on_foreign_table(key_id,
                                                 *m_key_descr_arr[key_id],
                                                 row_info.old_data,
+                                                row_info.new_data,
                                                 row_info.tx, true);
       if (rc) {
         DBUG_RETURN(rc);
@@ -10263,7 +10329,7 @@ int ha_rocksdb::delete_row(const uchar *const buf) {
   ulonglong bytes_written = 0;
 
   for (uint i = 0; i < m_tbl_def->m_key_count; i++) {
-    int rc = check_fk_constraint_on_foreign_table(i, *m_key_descr_arr[i], buf, tx, false);
+    int rc = check_fk_constraint_on_foreign_table(i, *m_key_descr_arr[i], buf, nullptr, tx, false);
     if (rc) {
       DBUG_RETURN(rc);
     }
