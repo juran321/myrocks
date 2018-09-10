@@ -1051,6 +1051,9 @@ public:
   /* Array of index descriptors */
   std::shared_ptr<Rdb_key_def> *m_key_descr_arr;
 
+  bool find_key_gl_index_by_name(const std::string& col_name,
+                                GL_INDEX_ID& gl_index);
+
   // 2018/06/11 Quan Zhang Set of foreign key constraints in the table;
   // these refer to columns in other tables;
   Rdb_fk_set m_foreign_descr_set;

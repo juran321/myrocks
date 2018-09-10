@@ -230,7 +230,8 @@ void Rdb_key_def::setup(const TABLE *const tbl,
       /* this loop also loops over the 'extended key' tail */
       for (uint src_i = 0; src_i < m_key_parts; src_i++, keypart_to_set++) {
         Field *const field = key_part ? key_part->field : nullptr;
-
+        if (m_name == "PRIMARY")
+           m_name = std::string(field->field_name);
         if (simulating_extkey && !hidden_pk_exists) {
           DBUG_ASSERT(secondary_key);
           /* Check if this field is already present in the key definition */
@@ -3416,6 +3417,17 @@ Rdb_tbl_def::~Rdb_tbl_def() {
   }
 }
 
+bool Rdb_tbl_def::find_key_gl_index_by_name(const std::string& col_name,
+                                           GL_INDEX_ID& gl_index) {
+  for (uint i = 0; i < m_key_count; i++) {
+    if (m_key_descr_arr[i]->get_name() == col_name) {
+      gl_index = m_key_descr_arr[i]->get_gl_index_id();
+      return true;
+    }
+  }
+  return false;
+}
+
 /*
   Put table definition DDL entry. Actual write is done at
   Rdb_dict_manager::commit.
@@ -4339,6 +4351,8 @@ bool Rdb_ddl_manager::rename(const std::string &from, const std::string &to,
   new_rec->m_auto_incr_val =
       rec->m_auto_incr_val.load(std::memory_order_relaxed);
   new_rec->m_key_descr_arr = rec->m_key_descr_arr;
+  new_rec->m_foreign_descr_set = rec->m_foreign_descr_set;
+  new_rec->m_referenced_descr_set = rec->m_referenced_descr_set;
 
   // so that it's not free'd when deleting the old rec
   rec->m_key_descr_arr = nullptr;

@@ -5335,6 +5335,21 @@ ha_rocksdb::ha_rocksdb(my_core::handlerton *const hton,
       m_row_checksums_checked(0), m_in_rpl_delete_rows(false),
       m_in_rpl_update_rows(false), m_force_skip_unique_check(false) {}
 
+ha_rocksdb::ha_rocksdb(const ha_rocksdb& other)
+    : handler(other), m_table_handler(nullptr), m_scan_it(nullptr),
+      m_scan_it_skips_bloom(false), m_scan_it_snapshot(nullptr),
+      m_scan_it_lower_bound(nullptr), m_scan_it_upper_bound(nullptr),
+      m_tbl_def(nullptr), m_pk_descr(nullptr), m_key_descr_arr(nullptr),
+      m_pk_can_be_decoded(false), m_maybe_unpack_info(false),
+      m_pk_tuple(nullptr), m_pk_packed_tuple(nullptr),
+      m_sk_packed_tuple(nullptr), m_end_key_packed_tuple(nullptr),
+      m_sk_match_prefix(nullptr), m_sk_match_prefix_buf(nullptr),
+      m_sk_packed_tuple_old(nullptr), m_dup_sk_packed_tuple(nullptr),
+      m_dup_sk_packed_tuple_old(nullptr), m_pack_buffer(nullptr),
+      m_lock_rows(RDB_LOCK_NONE), m_keyread_only(FALSE), m_encoder_arr(nullptr),
+      m_row_checksums_checked(0), m_in_rpl_delete_rows(false),
+      m_in_rpl_update_rows(false), m_force_skip_unique_check(false) {}
+
 static const char *ha_rocksdb_exts[] = {NullS};
 
 const char **ha_rocksdb::bas_ext() const {
@@ -7031,7 +7046,14 @@ int ha_rocksdb::create_key_def(const TABLE *const table_arg, const uint &i,
                                                      Rdb_key_def::TTL_FLAG)
           : UINT_MAX;
 
-  const char *const key_name = get_key_name(i, table_arg, m_tbl_def);
+  const char * key_name = get_key_name(i, table_arg, m_tbl_def);
+
+  if (std::string(key_name) == "PRIMARY") {
+    KEY *key_info = &table_arg->key_info[i];
+    KEY_PART_INFO *key_part = key_info->key_part;
+    key_name = key_part->field->field_name;
+  }
+
   *new_key_def = std::make_shared<Rdb_key_def>(
       index_id, i, cf_info.cf_handle, index_dict_version, index_type,
       kv_version, cf_info.is_reverse_cf, cf_info.is_per_partition_cf, key_name,
@@ -7302,7 +7324,6 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
     DBUG_ASSERT(str != nullptr);
 
     while (*str != '\0') {
-
       // Scan from our current pos looking for 'FOREIGN'
       str = rdb_find_in_string(str, "FOREIGN", &success);
       if (!success) {
@@ -7314,7 +7335,7 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       DBUG_ASSERT(success);
 
       if (!my_isspace(&my_charset_bin, *str)) {
-        break;
+        continue;
       }
 
       // See if the next token is 'KEY'
@@ -7341,11 +7362,11 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       Rdb_fk_def fk_def;
       std::string col_name;
       rdb_parse_id(&my_charset_bin, str, &col_name);
-      for (uint keyno = 0; keyno < m_tbl_def->m_key_count; keyno++) {
-        if (m_key_descr_arr[keyno]->get_name() == col_name) {
-          fk_def.m_foreign_gl_index_id = m_key_descr_arr[keyno]->get_gl_index_id();
-          break;
-        }
+      bool found = m_tbl_def->find_key_gl_index_by_name(col_name, fk_def.m_foreign_gl_index_id);
+      if (!found) {
+        err = HA_ERR_CANNOT_ADD_FOREIGN;
+        dict_manager.unlock();
+        goto error;
       }
 
       str = rdb_check_next_token(&my_charset_bin, str, col_name.c_str(), &success);
@@ -7377,11 +7398,11 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
 
       std::string ref_col_name;
       rdb_parse_id(&my_charset_bin, str, &ref_col_name);
-      for (uint keyno = 0; keyno < referenced_tdef->m_key_count; keyno++) {
-        if (referenced_tdef->m_key_descr_arr[keyno]->get_name() == ref_col_name) {
-          fk_def.m_referenced_gl_index_id = referenced_tdef->m_key_descr_arr[keyno]->get_gl_index_id();
-          break;
-        }
+      found = referenced_tdef->find_key_gl_index_by_name(ref_col_name, fk_def.m_referenced_gl_index_id);
+      if (!found) {
+        err = HA_ERR_CANNOT_ADD_FOREIGN;
+        dict_manager.unlock();
+        goto error;
       }
 
       str = rdb_check_next_token(&my_charset_bin, str, ref_col_name.c_str(), &success);
@@ -7392,7 +7413,7 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
         continue;
       }
 
-      uint32_t type = DICT_FOREIGN_ON_DELETE_SET_NULL | DICT_FOREIGN_ON_UPDATE_SET_NULL;
+      uint32_t type = DICT_FOREIGN_ON_DELETE_NO_ACTION | DICT_FOREIGN_ON_UPDATE_NO_ACTION;
       bool is_on_delete = false;
 
       while (true) {
@@ -7407,11 +7428,22 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
           if (!success) {
             str = rdb_check_next_token(&my_charset_bin, str, "UPDATE", &success);
             if (!success) {
-              continue;
+              err = HA_ERR_CANNOT_ADD_FOREIGN;
+              dict_manager.unlock();
+              goto error;
             }
             is_on_delete = false;
           } else {
             is_on_delete = true;
+          }
+        }
+
+        str = rdb_check_next_token(&my_charset_bin, str, "RESTRICT", &success);
+        if (success) {
+          if (is_on_delete) {
+            type |= DICT_FOREIGN_ON_DELETE_NO_ACTION;
+          } else {
+            type |= DICT_FOREIGN_ON_UPDATE_NO_ACTION;
           }
         }
 
@@ -7421,6 +7453,18 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
             type |= DICT_FOREIGN_ON_DELETE_CASCADE;
           } else {
             type |= DICT_FOREIGN_ON_UPDATE_CASCADE;
+          }
+        }
+
+        str = rdb_check_next_token(&my_charset_bin, str, "SET", &success);
+        if (success) {
+          str = rdb_check_next_token(&my_charset_bin, str, "NULL", &success);
+          if (success) {
+            if (is_on_delete) {
+              type |= DICT_FOREIGN_ON_DELETE_SET_NULL;
+            } else {
+              type |= DICT_FOREIGN_ON_UPDATE_SET_NULL;
+            }
           }
         }
 
@@ -7441,6 +7485,12 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       fk_def.m_type = type;
       m_tbl_def->m_foreign_descr_set.insert(fk_def);
       referenced_tdef->m_referenced_descr_set.insert(fk_def);
+    }
+    str = rdb_skip_spaces(&my_charset_bin, str);
+    if (*str != '\0') {
+      err = HA_ERR_CANNOT_ADD_FOREIGN;
+      dict_manager.unlock();
+      goto error;
     }
   }
 
@@ -9117,6 +9167,7 @@ int ha_rocksdb::check_key_in_other_table(const Rdb_key_def &my_key_def,
                                          Rdb_transaction *tx,
                                          bool *const found,
                                          Rdb_table_handler **const other_tbl_handler, /* = nullptr */
+                                         std::string *const other_tbl_full_name, /* = nullptr */
                                          Rdb_tbl_def **const other_tbl_def, /* = nullptr */
                                          std::unique_ptr<rocksdb::Iterator> *const other_tbl_iter, /* = nullptr */
                                          bool *const is_other_tbl_index_pk /* = nullptr */) {
@@ -9133,6 +9184,9 @@ int ha_rocksdb::check_key_in_other_table(const Rdb_key_def &my_key_def,
     DBUG_RETURN(rc);
   }
   std::string other_full_table_name = "./" + other_dbname + "/" + other_tablename;
+  if (other_tbl_full_name) {
+    *other_tbl_full_name = other_full_table_name;
+  }
   Rdb_table_handler *other_table_handler = rdb_open_tables.get_table_handler(other_full_table_name.c_str());
   if (other_tbl_handler) {
     *other_tbl_handler = other_table_handler;
@@ -9211,6 +9265,7 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
       // check if foreign table has the same key
       bool found;
       Rdb_table_handler *foreign_tbl_handler;
+      std::string foreign_tbl_full_name;
       Rdb_tbl_def *foreign_tbl_def;
       std::unique_ptr<rocksdb::Iterator> foreign_tbl_it;
       bool is_fk_pk;
@@ -9220,6 +9275,7 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
                                         tx,
                                         &found,
                                         &foreign_tbl_handler,
+                                        &foreign_tbl_full_name,
                                         &foreign_tbl_def,
                                         &foreign_tbl_it,
                                         &is_fk_pk
@@ -9229,25 +9285,16 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
       }
       if (found) {
         if (is_update) {
-          if (fk_def.m_type & DICT_FOREIGN_ON_UPDATE_NO_ACTION) {
-            return HA_ERR_ROW_IS_REFERENCED;
-          }
-          else if (fk_def.m_type & DICT_FOREIGN_ON_UPDATE_CASCADE) {
+          if (fk_def.m_type & DICT_FOREIGN_ON_UPDATE_CASCADE) {
             // update the foreign key in the foreign table
-            // TODO: add new buffer to complete the update
-            // TODO: handle chaining cascade update
-            rocksdb::Slice foreign_key = foreign_tbl_it->key();
-            std::shared_ptr<const Rdb_key_def> foreign_key_def = ddl_manager.safe_find(fk_def.m_foreign_gl_index_id);
-            ulonglong bytes_written = 0;
-            const rocksdb::Status s =
-              get_for_update(tx, foreign_key_def->get_cf(), foreign_key, nullptr);
-
-            if (!s.ok() && !s.IsNotFound()) {
-              return tx->set_status_error(
-                foreign_tbl_handler->m_table->in_use, s, *foreign_key_def, foreign_tbl_def, foreign_tbl_handler);
+            rocksdb::Slice old_foreign_key = foreign_tbl_it->key();
+            uchar * old_foreign_data;
+            rc = convert_record_from_storage_format(&old_foreign_key, old_foreign_data);
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
             }
-            tx->delete_key(foreign_key_def->get_cf(), foreign_key);
-            bytes_written += foreign_key.size();
+
+            std::shared_ptr<const Rdb_key_def> foreign_key_def = ddl_manager.safe_find(fk_def.m_foreign_gl_index_id);
 
             // pack new key in foreign table
             // TODO: consider the variant db type update
@@ -9255,96 +9302,69 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
               reinterpret_cast<uchar *>(my_malloc(foreign_key_def->max_storage_fmt_length(), MYF(0)));
             uchar *foreign_tbl_key_packed_tuple =
               reinterpret_cast<uchar *>(my_malloc(foreign_key_def->max_storage_fmt_length(), MYF(0)));
-            memcpy(foreign_tbl_key_packed_tuple, foreign_key.data(), foreign_key.size());
-            foreign_key_def->pack_key_from_other_table(table,
+            memcpy(foreign_tbl_key_packed_tuple, old_foreign_key.data(), old_foreign_key.size());
+            int size = foreign_key_def->pack_key_from_other_table(table,
                                                        foreign_tbl_handler->m_table,
                                                        kd,
                                                        foreign_tbl_key_buf,
                                                        new_data,
-                                foreign_tbl_key_packed_tuple);
+                                                       foreign_tbl_key_packed_tuple);
             rocksdb::Slice new_foreign_key =
-              rocksdb::Slice((const char *)foreign_tbl_key_packed_tuple, foreign_key.size());
-            // update secondary index in foreign table
-            tx->get_indexed_write_batch()->Put(foreign_key_def->get_cf(), new_foreign_key,
-                                            foreign_tbl_it->value());
-            bytes_written += foreign_key.size() + foreign_tbl_it->value().size();
-
-            if (!is_fk_pk) {
-              const uint fpk = pk_index(foreign_tbl_handler->m_table, foreign_tbl_def);
-              std::shared_ptr<Rdb_key_def> *foreign_key_descr_array = foreign_tbl_def->m_key_descr_arr;
-              uchar *fpk_packed_tuple = reinterpret_cast<uchar *>(my_malloc(
-                                                                  foreign_key_descr_array[fpk]->max_storage_fmt_length(),
-                                                                  YF(0)));
-              uint pk_size =
-                foreign_key_def->get_primary_key_tuple(foreign_tbl_handler->m_table,
-                                                       *foreign_key_descr_array[fpk],
-                                                       &foreign_key,
-                                                       fpk_packed_tuple);
-              rocksdb::Slice foreign_primary_key =
-                rocksdb::Slice((const char *)fpk_packed_tuple, pk_size);
-              rocksdb::Slice foreign_primary_value;
-              const rocksdb::Status s =
-                get_for_update(tx, foreign_key_descr_array[fpk]->get_cf(), foreign_primary_key, &foreign_primary_value);
-
-              if (!s.ok() && !s.IsNotFound()) {
-                return tx->set_status_error(
-                  foreign_tbl_handler->m_table->in_use, s, *foreign_key_descr_array[fpk], foreign_tbl_def, foreign_tbl_handler);
-              }
-              tx->delete_key(foreign_key_descr_array[fpk]->get_cf(), foreign_primary_key);
-              bytes_written += foreign_primary_key.size();
-
-              uchar *new_fpk_packed_tuple = reinterpret_cast<uchar *>(my_malloc(
-                                                                      foreign_key_descr_array[fpk]->max_storage_fmt_length(),
-                                                                      YF(0)));
-              pk_size =
-                foreign_key_def->get_primary_key_tuple(foreign_tbl_handler->m_table,
-                                                       *foreign_key_descr_array[fpk],
-                                                       &new_foreign_key,
-                                                       new_fpk_packed_tuple);
-              rocksdb::Slice new_foreign_primary_key =
-                rocksdb::Slice((const char *)new_fpk_packed_tuple, pk_size);
-              // update primary index in foreign table
-              tx->get_indexed_write_batch()->Put(foreign_key_descr_array[fpk]->get_cf(), new_foreign_key,
-                                            foreign_primary_value);
-              bytes_written += new_foreign_key.size() + foreign_primary_value.size();
+              rocksdb::Slice((const char *)foreign_tbl_key_packed_tuple, size);
+            uchar * new_foreign_data;
+            rc = convert_record_from_storage_format(&new_foreign_key, new_foreign_data);
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
             }
-            tx->incr_update_count();
-            stats.rows_updated++;
-            tx->update_bytes_written(bytes_written);
-          }
-        } else {
-          if (fk_def.m_type & DICT_FOREIGN_ON_DELETE_NO_ACTION) {
+
+            std::unique_ptr<ha_rocksdb> foreign_table_handler(new ha_rocksdb(*this));
+            rc = foreign_table_handler->open(foreign_tbl_full_name.c_str(), O_WRONLY, false);
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
+            }
+
+            rc = foreign_table_handler->update_row(old_foreign_data, new_foreign_data);
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
+            }
+
+            rc = foreign_table_handler->close();
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
+            }
+
+          } else if (fk_def.m_type & DICT_FOREIGN_ON_UPDATE_NO_ACTION) {
             return HA_ERR_ROW_IS_REFERENCED;
           }
-          else if (fk_def.m_type & DICT_FOREIGN_ON_DELETE_CASCADE) {
+        } else {
+          if (fk_def.m_type & DICT_FOREIGN_ON_DELETE_CASCADE) {
             // delete the foreign key in the foreign table
             // TODO: add multiple foreign keys here to handle multiple row delete
-            // TODO: handle chaining cascade delete
             rocksdb::Slice foreign_key = foreign_tbl_it->key();
-            std::shared_ptr<const Rdb_key_def> foreign_key_def = ddl_manager.safe_find(fk_def.m_foreign_gl_index_id);
-
-            ulonglong bytes_written = 0;
-            tx->delete_key(foreign_key_def->get_cf(), foreign_key);
-            bytes_written += foreign_key.size();
-            if (!is_fk_pk) {
-              const uint fpk = pk_index(foreign_tbl_handler->m_table, foreign_tbl_def);
-              std::shared_ptr<Rdb_key_def> *foreign_key_descr_array = foreign_tbl_def->m_key_descr_arr;
-              uchar *fpk_packed_tuple = reinterpret_cast<uchar *>(my_malloc(
-                                                                  foreign_key_descr_array[fpk]->max_storage_fmt_length(),
-                                                                  YF(0)));
-              uint pk_size =
-                foreign_key_def->get_primary_key_tuple(foreign_tbl_handler->m_table,
-                                                       *foreign_key_descr_array[fpk],
-                                                       &foreign_key,
-                                                       fpk_packed_tuple);
-              rocksdb::Slice foreign_primary_key =
-                rocksdb::Slice((const char *)fpk_packed_tuple, pk_size);
-              tx->delete_key(foreign_key_descr_array[fpk]->get_cf(), foreign_primary_key);
-              bytes_written += foreign_primary_key.size();
+            uchar * foreign_data;
+            rc = convert_record_from_storage_format(&foreign_key, foreign_data);
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
             }
-            tx->incr_delete_count();
-            stats.rows_deleted++;
-            tx->update_bytes_written(bytes_written);
+
+            std::unique_ptr<ha_rocksdb> foreign_table_handler(new ha_rocksdb(*this));
+            rc = foreign_table_handler->open(foreign_tbl_full_name.c_str(), O_WRONLY, false);
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
+            }
+
+            rc = foreign_table_handler->delete_row(foreign_data);
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
+            }
+
+            rc = foreign_table_handler->close();
+            if (rc != HA_EXIT_SUCCESS) {
+              DBUG_RETURN(rc);
+            }
+          }
+          else if (fk_def.m_type & DICT_FOREIGN_ON_DELETE_NO_ACTION) {
+            return HA_ERR_ROW_IS_REFERENCED;
           }
         }
       }
@@ -11902,6 +11922,8 @@ bool ha_rocksdb::prepare_inplace_alter_table(
         m_tbl_def->m_auto_incr_val.load(std::memory_order_relaxed);
     new_tdef->m_hidden_pk_val =
         m_tbl_def->m_hidden_pk_val.load(std::memory_order_relaxed);
+    new_tdef->m_foreign_descr_set = m_tbl_def->m_foreign_descr_set;
+    new_tdef->m_referenced_descr_set = m_tbl_def->m_referenced_descr_set;
 
     if (create_key_defs(altered_table, new_tdef, table, m_tbl_def)) {
       /* Delete the new key descriptors */

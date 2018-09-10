@@ -799,6 +799,7 @@ public:
 
   ha_rocksdb(my_core::handlerton *const hton,
              my_core::TABLE_SHARE *const table_arg);
+  ha_rocksdb(const ha_rocksdb& other);
   ~ha_rocksdb() {
     int err MY_ATTRIBUTE((__unused__));
     err = finalize_bulk_load(false);
@@ -1214,6 +1215,7 @@ private:
                                Rdb_transaction *tx,
                                bool *const found,
                                Rdb_table_handler **const other_tbl_handler = nullptr,
+                               std::string *const other_tbl_full_name = nullptr,
                                Rdb_tbl_def **const other_tbl_def = nullptr,
                                std::unique_ptr<rocksdb::Iterator> *const other_tbl_iter = nullptr,
                                bool *const is_other_tbl_index_pk = nullptr)
