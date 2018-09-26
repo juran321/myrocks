@@ -712,6 +712,12 @@ class ha_rocksdb : public my_core::handler {
 
   void set_last_rowkey(const uchar *const old_data);
 
+  void set_last_rowkey(const char *const rowid, const uint rowid_size);
+
+  std::shared_ptr<Rdb_key_def> get_pk_def() const { return m_pk_descr; }
+
+  bool skip_check_fk_constraint_on_referenced_table = false;
+
   /*
     Array of table->s->fields elements telling how to store fields in the
     record.
@@ -835,6 +841,14 @@ public:
     Returns the name of the table's base name
   */
   const std::string &get_table_basename() const;
+
+  void set_pk_packed_tuple(const char *data, const std::size_t data_len);
+
+  void set_sk_packed_tuple(const char *data, const std::size_t data_len);
+
+  void set_skip_check_fk_constraint_on_referenced_table() {
+    skip_check_fk_constraint_on_referenced_table = true;
+  }
 
   /** @brief
     This is a list of flags that indicate what functionality the storage engine
@@ -1049,6 +1063,8 @@ public:
 
   int index_next(uchar *const buf) override
       MY_ATTRIBUTE((__warn_unused_result__));
+  int index_next_same_intern(uchar *buf, const uchar *key, uint keylen)
+      MY_ATTRIBUTE((__warn_unused_result__));
   int index_next_with_direction(uchar *const buf, bool move_forward)
       MY_ATTRIBUTE((__warn_unused_result__));
   int index_prev(uchar *const buf) override
@@ -1217,8 +1233,9 @@ private:
                                Rdb_table_handler **const other_tbl_handler = nullptr,
                                std::string *const other_tbl_full_name = nullptr,
                                Rdb_tbl_def **const other_tbl_def = nullptr,
+                               rocksdb::Slice *const other_tbl_part_key = nullptr,
                                std::unique_ptr<rocksdb::Iterator> *const other_tbl_iter = nullptr,
-                               bool *const is_other_tbl_index_pk = nullptr)
+                               uint *const other_tbl_index_key_id = nullptr)
       MY_ATTRIBUTE((__warn_unused_result__));
   int check_fk_constraint_on_foreign_table(const uint &key_id,
                                            const Rdb_key_def &kd,
@@ -1297,6 +1314,8 @@ public:
   int index_init(uint idx, bool sorted) override
       MY_ATTRIBUTE((__warn_unused_result__));
   int index_end() override MY_ATTRIBUTE((__warn_unused_result__));
+
+  void lock_row() { m_lock_rows = RDB_LOCK_WRITE; }
 
   void unlock_row() override;
 
