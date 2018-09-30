@@ -4439,7 +4439,7 @@ static int rocksdb_init_func(void *const p) {
 
   // 2018/06/07 Quan Zhang Support Foreign Key
   rocksdb_hton->flags = HTON_TEMPORARY_NOT_SUPPORTED |
-                        HTON_SUPPORTS_EXTENDED_KEYS | HTON_CAN_RECREATE |
+                        HTON_SUPPORTS_EXTENDED_KEYS |
                         HTON_SUPPORTS_FOREIGN_KEYS;
 
   DBUG_ASSERT(!mysqld_embedded);
@@ -11247,6 +11247,20 @@ int ha_rocksdb::delete_table(const char *const tablename) {
   Rdb_tbl_def *const tbl = get_table_if_exists(tablename);
   if (!tbl)
     DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
+  
+  // if the deleted table is being referenced, and it is not referenced by the table itself,
+  // we will need to call remove_rows
+  if (!tbl->m_referenced_descr_set.empty()) {
+    for (auto it = tbl->m_referenced_descr_set.begin();
+      it != tbl->m_referenced_descr_set.end(); ++it) {
+      std::string foreign_table_name = ddl_manager.safe_get_table_name(it->m_foreign_gl_index_id);
+      std::string referenced_table_name = ddl_manager.safe_get_table_name(it->m_referenced_gl_index_id);
+      if (foreign_table_name != referenced_table_name) {
+        int err = remove_rows(tbl);
+        DBUG_RETURN(err);
+      }
+    }
+  }
   dict_manager.add_drop_table(tbl->m_key_descr_arr, tbl->m_key_count, batch);
 
   /*
@@ -12631,29 +12645,20 @@ static FOREIGN_KEY_INFO *get_foreign_key_info(
   std::string foreign_table;
   std::string referenced_db;
   std::string referenced_table;
-  if (rdb_normalize_tablename(foreign_table_name, &str) != HA_EXIT_SUCCESS) {
+
+  if (rdb_split_normalized_tablename(foreign_table_name, &foreign_db, &foreign_table) != HA_EXIT_SUCCESS) {
     SHIP_ASSERT(false);
     return nullptr;
   }
 
-  if (rdb_split_normalized_tablename(str, &foreign_db, &foreign_table) != HA_EXIT_SUCCESS) {
-    SHIP_ASSERT(false);
-    return nullptr;
-  }
-
-  if (rdb_normalize_tablename(referenced_table_name, &str) != HA_EXIT_SUCCESS) {
-    SHIP_ASSERT(false);
-    return nullptr;
-  }
-
-  if (rdb_split_normalized_tablename(str, &referenced_db, &referenced_table) != HA_EXIT_SUCCESS) {
+  if (rdb_split_normalized_tablename(referenced_table_name, &referenced_db, &referenced_table) != HA_EXIT_SUCCESS) {
     SHIP_ASSERT(false);
     return nullptr;
   }
 
   std::stringstream id;
   id << foreign.m_foreign_gl_index_id.cf_id << "," << foreign.m_foreign_gl_index_id.index_id << ","
-  << foreign.m_referenced_gl_index_id.cf_id << "," << foreign.m_referenced_gl_index_id.index_id;
+    << foreign.m_referenced_gl_index_id.cf_id << "," << foreign.m_referenced_gl_index_id.index_id;
 
   f_key_info.foreign_id = thd_make_lex_string(thd, 0, id.str().c_str(),
 		(uint) id.str().length(), 1);

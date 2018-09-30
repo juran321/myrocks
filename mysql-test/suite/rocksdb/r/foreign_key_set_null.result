@@ -7,29 +7,37 @@ INSERT INTO t2 (a,b) VALUES (4,400);
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
 UPDATE t2 SET b=500 WHERE a=2;
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
-UPDATE t1 SET b=50 WHERE b=100;
-DELETE FROM t1 WHERE b=50;
+UPDATE t1 SET b=150 WHERE b=100;
+DELETE FROM t1 WHERE b=200;
 SELECT * from t1;
 b
-200
+150
 300
 SELECT * from t2;
 a	b
 1	NULL
-2	200
+2	NULL
 3	300
 DROP TABLE t2;
 TRUNCATE TABLE t1;
-CREATE TABLE t2 (a INT NOT NULL, b INT NOT NULL, FOREIGN KEY (b) REFERENCES t1(b) ON UPDATE SET NULL ON DELETE SET NULL);
+CREATE TABLE t2 (a INT NOT NULL, b INT, FOREIGN KEY (b) REFERENCES t1(b) ON UPDATE SET NULL ON DELETE SET NULL);
 INSERT INTO t1 (b) VALUES (100),(200),(300);
-INSERT INTO t2 (a,b) VALUES (1,100),(2,100),(3,300);
-INSERT INTO t2 (a,b) VALUES (4,400);
+INSERT INTO t2 (a,b) VALUES (1,100),(2,100),(3,200),(4,300);
+INSERT INTO t2 (a,b) VALUES (5,400);
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
 UPDATE t2 SET b=500 WHERE a=2;
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
-UPDATE t1 SET b=50 WHERE b=100;
-DELETE FROM t1 WHERE b=50;
+UPDATE t1 SET b=150 WHERE b=100;
+DELETE FROM t1 WHERE b=200;
 SELECT * from t1;
 b
-200
+150
 300
+SELECT * from t2;
+a	b
+1	NULL
+2	NULL
+3	200
+4	300
+DROP TABLE t2;
+DROP TABLE t1;
