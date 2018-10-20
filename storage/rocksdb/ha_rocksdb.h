@@ -1315,8 +1315,6 @@ public:
       MY_ATTRIBUTE((__warn_unused_result__));
   int index_end() override MY_ATTRIBUTE((__warn_unused_result__));
 
-  void lock_row() { m_lock_rows = RDB_LOCK_WRITE; }
-
   void unlock_row() override;
 
   /** @brief

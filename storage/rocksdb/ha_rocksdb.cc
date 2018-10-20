@@ -7491,7 +7491,7 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
         }
       }
 
-      ddl_manager.put_fk_def(batch, fk_def.m_foreign_gl_index_id, fk_def.m_referenced_gl_index_id, type);
+      dict_manager.put_fk_def(batch, fk_def.m_foreign_gl_index_id, fk_def.m_referenced_gl_index_id, type);
       fk_def.m_type = type;
       m_tbl_def->m_foreign_descr_set.insert(fk_def);
       referenced_tdef->m_referenced_descr_set.insert(fk_def);
@@ -9448,7 +9448,7 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
             foreign_table_handler->set_sk_packed_tuple(foreign_tbl_part_key.data(), foreign_tbl_part_key.size());
           }
 
-          foreign_table_handler->lock_row();
+          foreign_table_handler->external_lock(ha_thd(), F_WRLCK);
 
           rc = foreign_table_handler->ha_index_init(foreign_tbl_index_key_id, true);
           if (rc != HA_EXIT_SUCCESS) {
@@ -9491,6 +9491,8 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
           if (rc != HA_EXIT_SUCCESS) {
             DBUG_RETURN(rc);
           }
+
+          foreign_table_handler->external_lock(ha_thd(), F_UNLCK);
 
           rc = foreign_table_handler->close();
           if (rc != HA_EXIT_SUCCESS) {
@@ -11249,18 +11251,26 @@ int ha_rocksdb::delete_table(const char *const tablename) {
     DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
   
   // if the deleted table is being referenced, and it is not referenced by the table itself,
-  // we will need to call remove_rows
+  // we will need to return failure
   if (!tbl->m_referenced_descr_set.empty()) {
     for (auto it = tbl->m_referenced_descr_set.begin();
       it != tbl->m_referenced_descr_set.end(); ++it) {
       std::string foreign_table_name = ddl_manager.safe_get_table_name(it->m_foreign_gl_index_id);
-      std::string referenced_table_name = ddl_manager.safe_get_table_name(it->m_referenced_gl_index_id);
-      if (foreign_table_name != referenced_table_name) {
-        int err = remove_rows(tbl);
-        DBUG_RETURN(err);
+      if (foreign_table_name != tablename) {
+        DBUG_RETURN(HA_ERR_ROW_IS_REFERENCED);
       }
     }
   }
+  // remove the fk definition in ddl and in memory 
+  for (auto it = tbl->m_foreign_descr_set.begin();
+    it != tbl->m_foreign_descr_set.end(); ++it) {
+    dict_manager.delete_fk_def(batch, it->m_foreign_gl_index_id);
+    std::string referenced_table_name = ddl_manager.safe_get_table_name(it->m_referenced_gl_index_id);
+    auto referenced_tdef = ddl_manager.find(referenced_table_name);
+    DBUG_ASSERT(referenced_tdef != nullptr);
+    referenced_tdef->m_referenced_descr_set.erase(*it);
+  }
+
   dict_manager.add_drop_table(tbl->m_key_descr_arr, tbl->m_key_count, batch);
 
   /*

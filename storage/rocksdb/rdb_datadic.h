@@ -1157,10 +1157,6 @@ public:
   /* Modify the mapping and write it to on-disk storage */
   int put_and_write(Rdb_tbl_def *const key_descr,
                     rocksdb::WriteBatch *const batch);
-  /* 2018/06/11 Quan Zhang FK Index => RF Index under the */
-  void put_fk_def(rocksdb::WriteBatch *const batch, const GL_INDEX_ID &foreign_gl_index_id,
-                                    const GL_INDEX_ID &referenced_gl_index_id,
-                                    const uint32_t &type);
 
   void remove(Rdb_tbl_def *const rec, rocksdb::WriteBatch *const batch,
               const bool &lock = true);
@@ -1366,12 +1362,13 @@ public:
   bool get_index_info(const GL_INDEX_ID &gl_index_id,
                       struct Rdb_index_info *const index_info) const;
 
-  /* 2018/06/11 Quan Zhang FK Index => RF Index under the */
+  /* 2018/06/11 Quan Zhang FK Index => RF Index */
   void put_fk_def(rocksdb::WriteBatch *const batch, const GL_INDEX_ID &foreign_gl_index_id,
                                     const GL_INDEX_ID &referenced_gl_index_id,
                                     const uint32_t &type);
   void get_fk_defs(const GL_INDEX_ID &gl_index_id,
                    struct std::vector<Rdb_fk_def> &fk_def_vec) const;
+  void delete_fk_def(rocksdb::WriteBatch *const batch, const GL_INDEX_ID &gl_index_id);
 
   /* CF id => CF flags */
   void add_cf_flags(rocksdb::WriteBatch *const batch, const uint &cf_id,

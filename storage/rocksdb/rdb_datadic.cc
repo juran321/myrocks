@@ -4263,14 +4263,6 @@ int Rdb_ddl_manager::put_and_write(Rdb_tbl_def *const tbl,
   return HA_EXIT_SUCCESS;
 }
 
-void Rdb_ddl_manager::put_fk_def(
-  rocksdb::WriteBatch *const batch,
-  const GL_INDEX_ID &foreign_gl_index_id,
-  const GL_INDEX_ID &referenced_gl_index_id,
-  const uint32_t &type) {
-  m_dict->put_fk_def(batch, foreign_gl_index_id, referenced_gl_index_id, type);
-}
-
 /* Return 0 - ok, other value - error */
 /* TODO:
   This function modifies m_ddl_hash and m_index_num_to_keydef.
@@ -4953,6 +4945,11 @@ void Rdb_dict_manager::get_fk_defs(
     fk_def_vec.push_back(fk_def);
   }
   delete it;
+}
+
+void Rdb_dict_manager::delete_fk_def(rocksdb::WriteBatch *const batch, 
+    const GL_INDEX_ID &gl_index_id) {
+  delete_with_prefix(batch, Rdb_key_def::FK_DEFINITION, gl_index_id);
 }
 
 bool Rdb_dict_manager::get_cf_flags(const uint32_t &cf_id,

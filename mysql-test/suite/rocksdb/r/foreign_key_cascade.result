@@ -15,13 +15,14 @@ b
 50
 SELECT * from t2;
 a	b
+1	50
 3	30
 DROP TABLE t2;
 TRUNCATE TABLE t1;
 CREATE TABLE t2 (a INT NOT NULL, b INT NOT NULL, FOREIGN KEY (b) REFERENCES t1(b) ON UPDATE CASCADE ON DELETE CASCADE);
 INSERT INTO t1 (b) VALUES (10),(20),(30);
 INSERT INTO t2 (a,b) VALUES (1,10),(2,10),(3,20),(4,30);
-INSERT INTO t2 (a,b) VALUES (4,40);
+INSERT INTO t2 (a,b) VALUES (5,40);
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
 UPDATE t2 SET b=50 WHERE a=2;
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
@@ -33,8 +34,8 @@ b
 50
 SELECT * from t2;
 a	b
+1	50
 2	50
-3	20
 4	30
 DROP TABLE t2;
 DROP TABLE t1;
