@@ -22,6 +22,10 @@ a	b
 1	100
 2	100
 3	300
+TRUNCATE TABLE t1;
+ERROR 42000: Cannot truncate a table referenced in a foreign key constraint (`test`.`t2`, CONSTRAINT `0,261,0,260` FOREIGN KEY (`b`) REFERENCES `test`.`t1` (`b`))
+DROP TABLE t1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails
 DROP TABLE t2;
 CREATE TABLE t2 (a INT NOT NULL, bforeign INT NOT NULL);
 DROP TABLE t2;
