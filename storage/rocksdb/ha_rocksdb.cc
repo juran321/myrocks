@@ -9500,7 +9500,8 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
           }
 
           if (is_delete_cascade) {
-            rc = foreign_table_handler->index_first(foreign_tbl_handler->m_table->record[0]);
+            rc = foreign_table_handler->index_first_same_intern(foreign_tbl_handler->m_table->record[0], (const uchar *)foreign_tbl_part_key.data(),
+                                                          foreign_tbl_part_key.size());
             while (rc == 0) {
               rc = foreign_table_handler->delete_row(foreign_tbl_handler->m_table->record[0]);
               if (rc != HA_EXIT_SUCCESS) {
