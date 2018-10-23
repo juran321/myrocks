@@ -7,12 +7,12 @@ INSERT INTO t2 (a,b) VALUES (4,400);
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
 UPDATE t2 SET b=500 WHERE a=2;
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
-UPDATE t1 SET b=150 WHERE b=100;
+UPDATE t1 SET b=500 WHERE b=100;
 DELETE FROM t1 WHERE b=200;
 SELECT * from t1;
 b
-150
 300
+500
 SELECT * from t2;
 a	b
 1	NULL
@@ -27,17 +27,17 @@ INSERT INTO t2 (a,b) VALUES (5,400);
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
 UPDATE t2 SET b=500 WHERE a=2;
 ERROR 23000: Cannot add or update a child row: a foreign key constraint fails ()
-UPDATE t1 SET b=150 WHERE b=100;
+UPDATE t1 SET b=500 WHERE b=100;
 DELETE FROM t1 WHERE b=200;
 SELECT * from t1;
 b
-150
 300
+500
 SELECT * from t2;
 a	b
 1	NULL
 2	NULL
-3	200
+3	NULL
 4	300
 DROP TABLE t2;
 DROP TABLE t1;

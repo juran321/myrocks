@@ -1072,6 +1072,8 @@ public:
 
   int index_first(uchar *const buf) override
       MY_ATTRIBUTE((__warn_unused_result__));
+  int index_first_same_intern(uchar *const buf, const uchar *key, uint keylen)
+      MY_ATTRIBUTE((__warn_unused_result__));
   int index_last(uchar *const buf) override
       MY_ATTRIBUTE((__warn_unused_result__));
 

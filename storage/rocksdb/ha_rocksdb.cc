@@ -8846,6 +8846,49 @@ int ha_rocksdb::index_first_intern(uchar *const buf) {
   DBUG_RETURN(rc);
 }
 
+int ha_rocksdb::index_first_same_intern(uchar *const buf, const uchar *key, uint keylen) {
+  DBUG_ENTER_FUNC();
+
+  int rc;
+
+  DBUG_ASSERT(key != nullptr);
+
+  const Rdb_key_def &kd = *m_key_descr_arr[active_index];
+
+  rocksdb::Slice index_key((const char *)key, keylen);
+
+  Rdb_transaction *const tx = get_or_create_tx(table->in_use);
+  DBUG_ASSERT(tx != nullptr);
+
+  const bool is_new_snapshot = !tx->has_snapshot();
+  // Loop as long as we get a deadlock error AND we end up creating the
+  // snapshot here (i.e. it did not exist prior to this)
+  for (;;) {
+    setup_scan_iterator(kd, &index_key, false, keylen);
+    m_scan_it->Seek(index_key);
+    m_skip_scan_it_next_call = true;
+
+    rc = index_next_with_direction(buf, true);
+    if (rc != HA_ERR_LOCK_DEADLOCK || !is_new_snapshot)
+      break; // exit the loop
+
+    // release the snapshot and iterator so they will be regenerated
+    tx->release_snapshot();
+    release_scan_iterator();
+  }
+
+  if (!rc) {
+    /*
+      index_next is always incremented on success, so decrement if it is
+      index_first instead
+     */
+    stats.rows_index_first++;
+    stats.rows_index_next--;
+  }
+
+  DBUG_RETURN(rc);
+}
+
 /**
   @details
   Start scanning from the "last" value
@@ -9433,6 +9476,7 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
           bool is_delete_cascade = !is_update && (fk_def.m_type & DICT_FOREIGN_ON_DELETE_CASCADE);
           std::unique_ptr<ha_rocksdb> foreign_table_handler(new ha_rocksdb(*this));
           foreign_tbl_handler->m_table->in_use = ha_thd();
+          my_bitmap_map *const old_map = dbug_tmp_use_all_columns(foreign_tbl_handler->m_table, foreign_tbl_handler->m_table->write_set);
           foreign_table_handler->change_table_ptr(foreign_tbl_handler->m_table, foreign_tbl_handler->m_table->s);
           rc = foreign_table_handler->open(foreign_tbl_full_name.c_str(), O_WRONLY, false);
           if (rc != HA_EXIT_SUCCESS) {
@@ -9466,7 +9510,8 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
               rc = foreign_table_handler->index_next_same_intern(foreign_tbl_handler->m_table->record[0], (const uchar *)foreign_tbl_part_key.data(), foreign_tbl_part_key.size());
             }
           } else {
-            rc = foreign_table_handler->index_first(foreign_tbl_handler->m_table->record[1]);
+            rc = foreign_table_handler->index_first_same_intern(foreign_tbl_handler->m_table->record[1], (const uchar *)foreign_tbl_part_key.data(),
+                                                          foreign_tbl_part_key.size());
             std::shared_ptr<const Rdb_key_def> foreign_key_def = ddl_manager.safe_find(fk_def.m_foreign_gl_index_id);
             while (rc == 0) {
               // pack new key in foreign table
@@ -9493,11 +9538,11 @@ int ha_rocksdb::check_fk_constraint_on_foreign_table(const uint &key_id,
           }
 
           foreign_table_handler->external_lock(ha_thd(), F_UNLCK);
-
           rc = foreign_table_handler->close();
           if (rc != HA_EXIT_SUCCESS) {
             DBUG_RETURN(rc);
           }
+          dbug_tmp_restore_column_map(foreign_tbl_handler->m_table->write_set, old_map);
         } else {
           return HA_ERR_ROW_IS_REFERENCED;
         }
