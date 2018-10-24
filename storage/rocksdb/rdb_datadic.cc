@@ -163,6 +163,14 @@ void Rdb_key_def::setup(const TABLE *const tbl,
       m_name = HIDDEN_PK_NAME;
     }
 
+    // this is to make foreign key reference to primary key possible
+    if (m_name == "PRIMARY") {
+      DBUG_ASSERT(!secondary_key);
+      if (key_info->actual_key_parts == 1) {
+        m_name = std::string(key_info->key_part->field->field_name);
+      }
+    }
+
     if (secondary_key)
       m_pk_key_parts = hidden_pk_exists ? 1 : pk_info->actual_key_parts;
     else {
@@ -230,8 +238,6 @@ void Rdb_key_def::setup(const TABLE *const tbl,
       /* this loop also loops over the 'extended key' tail */
       for (uint src_i = 0; src_i < m_key_parts; src_i++, keypart_to_set++) {
         Field *const field = key_part ? key_part->field : nullptr;
-        if (m_name == "PRIMARY")
-           m_name = std::string(field->field_name);
         if (simulating_extkey && !hidden_pk_exists) {
           DBUG_ASSERT(secondary_key);
           /* Check if this field is already present in the key definition */
@@ -1210,7 +1216,11 @@ uint Rdb_key_def::pack_key_from_other_table(
   tuple += INDEX_NUMBER_SIZE;
 
   const bool hidden_pk_exists = table_has_hidden_pk(my_tbl);
-  uint n_key_parts = hidden_pk_exists ? m_key_parts - 1 : m_key_parts;
+  const bool secondary_key = (m_index_type == INDEX_TYPE_SECONDARY);
+  uint n_key_parts = m_key_parts;
+  if (secondary_key)
+    n_key_parts -= hidden_pk_exists ? 1 : m_pk_key_parts;
+
   for (uint i = 0; i < n_key_parts; i++) {
     Field *const other_tbl_field = other_tbl_key_def.get_field_packing()[i].get_field_in_table(other_tbl);
     DBUG_ASSERT(other_tbl_field != nullptr);
