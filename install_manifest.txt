@@ -9680,6 +9680,7 @@
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/optimizer_loose_index_scans.test
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/rocksdb_range2.test
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/bloomfilter-master.opt
+/usr/local/mysql/mysql-test/./suite/rocksdb/t/i_s_fkinfo.test
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/drop_table3-master.opt
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/ttl_secondary_read_filtering_multiple_index.test
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/type_blob_indexes-master.opt
@@ -9707,6 +9708,7 @@
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/rocksdb_cf_reverse.test
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/information_schema-master.opt
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/index_merge_rocksdb-master.opt
+/usr/local/mysql/mysql-test/./suite/rocksdb/t/i_s_fkinfo2.test
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/blind_delete_without_tx_api.test
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/rocksdb_parts.test
 /usr/local/mysql/mysql-test/./suite/rocksdb/t/insert_with_keys.test
@@ -9771,6 +9773,7 @@
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/bloomfilter_bulk_load.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/get_error_message.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/gap_lock_issue254.result
+/usr/local/mysql/mysql-test/./suite/rocksdb/r/i_s_fkinfo2.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/multi_varchar_sk_lookup.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/tbl_opt_pack_keys.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/select_for_update.result
@@ -9875,6 +9878,7 @@
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/drop_database.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/add_index_inplace_cardinality.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/autoinc_crash_safe_partition.result
+/usr/local/mysql/mysql-test/./suite/rocksdb/r/i_s_fkinfo.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/cons_snapshot_read_committed.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/bulk_load_unsorted_rev.result
 /usr/local/mysql/mysql-test/./suite/rocksdb/r/rpl_row_triggers.result
@@ -12661,6 +12665,7 @@
 /usr/local/mysql/mysql-test/./include/index_merge_delete.inc
 /usr/local/mysql/mysql-test/./include/have_debug_sync.inc
 /usr/local/mysql/mysql-test/./asan.supp
+/usr/local/mysql/mysql-test/./var
 /usr/local/mysql/mysql-test/mtr
 /usr/local/mysql/mysql-test/mysql-test-run
 /usr/local/mysql/mysql-test/lib/My/SafeProcess/my_safe_process
