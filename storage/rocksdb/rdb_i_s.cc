@@ -1181,62 +1181,6 @@ static int rdb_i_s_fkinfo_init(void *const p) {
 }
 
 
-static ST_FIELD_INFO rdb_i_s_fk_fields_info[] = {
-    ROCKSDB_FIELD_INFO("FOR_COLUMN_FAMILY", sizeof(uint32_t), MYSQL_TYPE_LONG,
-                       0),
-    ROCKSDB_FIELD_INFO("FOR_INDEX_NUMBER", sizeof(uint32_t), MYSQL_TYPE_LONG,
-                       0),
-    ROCKSDB_FIELD_INFO("REF_COLUMN_FAMILY", sizeof(uint32_t), MYSQL_TYPE_LONG,
-                       0),
-    ROCKSDB_FIELD_INFO("REF_INDEX_NUMBER", sizeof(uint32_t), MYSQL_TYPE_LONG,
-                       0),
-    ROCKSDB_FIELD_INFO("TYPE", sizeof(uint32_t), MYSQL_TYPE_LONG, 0),
-    ROCKSDB_FIELD_INFO_END};
-
-static int rdb_i_s_fk_fill_table(my_core::THD *const thd,
-                                 my_core::TABLE_LIST *const tables,
-                                 my_core::Item *const cond) {
-  DBUG_ENTER_FUNC();
-
-  DBUG_ASSERT(thd != nullptr);
-  DBUG_ASSERT(tables != nullptr);
-  DBUG_ASSERT(tables->table != nullptr);
-
-  int ret = 0;
-  rocksdb::DB *const rdb = rdb_get_rocksdb_db();
-
-  if (!rdb) {
-    DBUG_RETURN(ret);
-  }
-
-  Rdb_ddl_scanner ddl_arg;
-
-  ddl_arg.m_thd = thd;
-  ddl_arg.m_table = tables->table;
-
-  Rdb_ddl_manager *ddl_manager = rdb_get_ddl_manager();
-  DBUG_ASSERT(ddl_manager != nullptr);
-
-  ret = ddl_manager->scan_for_tables(&ddl_arg);
-
-  DBUG_RETURN(ret);
-}
-
-static int rdb_i_s_fk_init(void *const p) {
-  DBUG_ENTER_FUNC();
-
-  DBUG_ASSERT(p != nullptr);
-
-  my_core::ST_SCHEMA_TABLE *schema;
-
-  schema = (my_core::ST_SCHEMA_TABLE *)p;
-
-  schema->fields_info = rdb_i_s_fk_fields_info;
-  schema->fill_table = rdb_i_s_fk_fill_table;
-
-  DBUG_RETURN(0);
-}
-
 static int rdb_i_s_cfoptions_init(void *const p) {
   DBUG_ENTER_FUNC();
 
