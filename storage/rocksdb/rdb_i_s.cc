@@ -1042,11 +1042,7 @@ static int rdb_i_s_ddl_init(void *const p) {
 
   DBUG_RETURN(0);
 }
-/*
-#################################################################################
-2018.11.06 FKINFO
-##################################################################################
-*/
+
 /*
 	Support for INFORMATION_SCHEMA.ROCKSDB_FKINFO dynamic table
 	This table contains 6 columns that show the information for the foreign key
@@ -1065,13 +1061,13 @@ struct Rdb_fkinfo_scanner : public Rdb_tables_scanner {
 
 namespace RDB_FKINFO_FIELD{
 	enum{
-		FOREIGN_TABLE_SCHEMA = 0,
-		FOREIGN_TABLE_NAME,
-		FOREIGN_COLUMN_NAME,
-		REFERENCED_TABLE_SCHEMA,
-		REFERENCED_TABLE_NAME,
-		REFERENCED_COLUMN_NAME,
-		TYPE
+		FOREIGN_TABLE_SCHEMA = 0,  //foreign table database
+		FOREIGN_TABLE_NAME, //foreign table name
+		FOREIGN_COLUMN_NAME, //foreign column name
+		REFERENCED_TABLE_SCHEMA, //referenced table database
+		REFERENCED_TABLE_NAME,  //referenced table name
+		REFERENCED_COLUMN_NAME,  //referenced column name
+		TYPE //TPYE
 	};
 }// namespace RDB_FKINFO_FIELD
 
@@ -1096,9 +1092,6 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 	DBUG_ASSERT(field != nullptr);
 
 	Rdb_dict_manager *dict_manager_cur = rdb_get_dict_manager();
-	//Rdb_ddl_manager *ddl_manager_cur = rdb_get_ddl_manager(); // should add in the outloop or in-loop????
-
-
 	const std::string &dbname = tdef->base_dbname();
 	const std::string &tablename = tdef->base_tablename();
 	field[RDB_FKINFO_FIELD::FOREIGN_TABLE_SCHEMA]->store(dbname.c_str(), dbname.size(),system_charset_info);
@@ -1109,8 +1102,6 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
     Rdb_ddl_manager *ddl_manager_cur = rdb_get_ddl_manager();
 		GL_INDEX_ID foreign_gl_index_id = fk_info.m_foreign_gl_index_id;
 		GL_INDEX_ID referenced_gl_index_id = fk_info.m_referenced_gl_index_id;
-		//should add const in the front????
-		
 		std::string referenced_tablename = ddl_manager_cur->safe_get_table_name(referenced_gl_index_id);
 		std::string referenced_db;
 		std::string referenced_table;
@@ -1121,7 +1112,6 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 		DBUG_ASSERT(err == 0);
 		std::shared_ptr<const Rdb_key_def> foreign_keydef =ddl_manager_cur->safe_find(foreign_gl_index_id);
 		std::shared_ptr<const Rdb_key_def> referenced_keydef = ddl_manager_cur->safe_find(referenced_gl_index_id);
-
 
 		const std::string &foreign_col_name = foreign_keydef->get_name();
 		const std::string &referenced_col_name = referenced_keydef->get_name();
@@ -1191,14 +1181,6 @@ static int rdb_i_s_fkinfo_init(void *const p) {
 }
 
 
-
-
-
-/*
-#####################################################################################
-END HERE
-####################################################################################
-*/
 static ST_FIELD_INFO rdb_i_s_fk_fields_info[] = {
     ROCKSDB_FIELD_INFO("FOR_COLUMN_FAMILY", sizeof(uint32_t), MYSQL_TYPE_LONG,
                        0),
@@ -2014,30 +1996,4 @@ struct st_mysql_plugin rdb_i_s_deadlock_info = {
     nullptr, /* config options */
     0,       /* flags */
 };
-
-
-/*
-2018.11.06
-ADD 
-
-*/
-struct st_mysql_plugin rdb_i_s_fkinfo=
-{
-  MYSQL_INFORMATION_SCHEMA_PLUGIN,
-  &rdb_i_s_info,
-  "ROCKSDB_FKINFO",
-  "HAPPPPPPPPPPY",
-  "RocksDB foreign key information",
-  PLUGIN_LICENSE_GPL,
-  rdb_i_s_fkinfo_init,
-  rdb_i_s_deinit,
-  0x0001,                             /* version number (0.1) */
-  nullptr,                            /* status variables */
-  nullptr,                            /* system variables */
-  nullptr,                            /* config options */
-  0,                                  /* flags */
-};
-
-
-
 } // namespace myrocks
