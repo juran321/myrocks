@@ -1108,10 +1108,10 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 		std::string referenced_partname;
 
 		int err = rdb_split_normalized_tablename(referenced_tablename,&referenced_db, &referenced_table, &referenced_partname);
-    
-    if(err == 0){
-      DBUG_RETURN(err);
-    }
+    DBUG_ASSERT(err == 0);
+    // if(err == 0){
+    //   DBUG_RETURN(err);
+    // }
 		
 		std::shared_ptr<const Rdb_key_def> foreign_keydef =ddl_manager_cur->safe_find(foreign_gl_index_id);
 		std::shared_ptr<const Rdb_key_def> referenced_keydef = ddl_manager_cur->safe_find(referenced_gl_index_id);
