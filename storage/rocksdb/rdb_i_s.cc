@@ -1904,7 +1904,7 @@ struct st_mysql_plugin rdb_i_s_fk = {
   MYSQL_INFORMATION_SCHEMA_PLUGIN,
   &rdb_i_s_info,
   "ROCKSDB_FKINFO",
-  "HAPPPPPPPPPPY",
+  "Ran Ju",
   "RocksDB foreign key information",
   PLUGIN_LICENSE_GPL,
   rdb_i_s_fkinfo_init,
