@@ -53,6 +53,16 @@ namespace myrocks {
 #define ROCKSDB_FIELD_INFO_END                                                 \
   ROCKSDB_FIELD_INFO(nullptr, 0, MYSQL_TYPE_NULL, 0)
 
+#define DICT_FOREIGN_ON_DELETE_CASCADE	1	/*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_DELETE_SET_NULL	2	/*!< ON UPDATE SET NULL */
+#define DICT_FOREIGN_ON_UPDATE_CASCADE	4	/*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_UPDATE_SET_NULL	8	/*!< ON UPDATE SET NULL */
+#define DICT_FOREIGN_ON_DELETE_NO_ACTION 16	/*!< ON DELETE NO ACTION */
+#define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32	/*!< ON UPDATE NO ACTION */
+/* @} */
+
+
+
 /*
   Support for INFORMATION_SCHEMA.ROCKSDB_CFSTATS dynamic table
  */
@@ -1043,48 +1053,157 @@ static int rdb_i_s_ddl_init(void *const p) {
   DBUG_RETURN(0);
 }
 
-static ST_FIELD_INFO rdb_i_s_fk_fields_info[] = {
-    ROCKSDB_FIELD_INFO("FOR_COLUMN_FAMILY", sizeof(uint32_t), MYSQL_TYPE_LONG,
-                       0),
-    ROCKSDB_FIELD_INFO("FOR_INDEX_NUMBER", sizeof(uint32_t), MYSQL_TYPE_LONG,
-                       0),
-    ROCKSDB_FIELD_INFO("REF_COLUMN_FAMILY", sizeof(uint32_t), MYSQL_TYPE_LONG,
-                       0),
-    ROCKSDB_FIELD_INFO("REF_INDEX_NUMBER", sizeof(uint32_t), MYSQL_TYPE_LONG,
-                       0),
-    ROCKSDB_FIELD_INFO("TYPE", sizeof(uint32_t), MYSQL_TYPE_LONG, 0),
-    ROCKSDB_FIELD_INFO_END};
+/*
+	Support for INFORMATION_SCHEMA.ROCKSDB_FKINFO dynamic table
+	This table contains 6 columns that show the information for the foreign key
+*/
 
-static int rdb_i_s_fk_fill_table(my_core::THD *const thd,
-                                 my_core::TABLE_LIST *const tables,
-                                 my_core::Item *const cond) {
-  DBUG_ENTER_FUNC();
+namespace // anonymous namespace = not visible outside this source file
+{
+struct Rdb_fkinfo_scanner : public Rdb_tables_scanner {
+  my_core::THD *m_thd;
+  my_core::TABLE *m_table;
 
-  DBUG_ASSERT(thd != nullptr);
-  DBUG_ASSERT(tables != nullptr);
-  DBUG_ASSERT(tables->table != nullptr);
+  int add_table(Rdb_tbl_def *tdef) override;
+};
+} // anonymous namespace
 
-  int ret = 0;
-  rocksdb::DB *const rdb = rdb_get_rocksdb_db();
 
-  if (!rdb) {
-    DBUG_RETURN(ret);
-  }
+namespace RDB_FKINFO_FIELD{
+	enum{
+		FOREIGN_TABLE_SCHEMA = 0,  //foreign table database
+		FOREIGN_TABLE_NAME, //foreign table name
+		FOREIGN_COLUMN_NAME, //foreign column name
+		REFERENCED_TABLE_SCHEMA, //referenced table database
+		REFERENCED_TABLE_NAME,  //referenced table name
+		REFERENCED_COLUMN_NAME,  //referenced column name
+		TYPE, //TPYE
+    DELETE_TYPE,
+    UPDATE_TYPE
+	};
+}// namespace RDB_FKINFO_FIELD
 
-  Rdb_ddl_scanner ddl_arg;
+static ST_FIELD_INFO rdb_i_s_fkinfo_fields_info[] ={
+	ROCKSDB_FIELD_INFO("FOREIGN_TABLE_SCHEMA", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+	ROCKSDB_FIELD_INFO("FOREIGN_TABLE_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+	ROCKSDB_FIELD_INFO("FOREIGN_COLUMN_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+	ROCKSDB_FIELD_INFO("REFERENCED_TABLE_SCHEMA", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+	ROCKSDB_FIELD_INFO("REFERENCED_TABLE_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+	ROCKSDB_FIELD_INFO("REFERENCED_COLUMN_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+	ROCKSDB_FIELD_INFO("TYPE", sizeof(uint16_t), MYSQL_TYPE_SHORT, 0),
+  ROCKSDB_FIELD_INFO("DELETE_TYPE", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+  ROCKSDB_FIELD_INFO("UPDATE_TYPE", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+	ROCKSDB_FIELD_INFO_END};
 
-  ddl_arg.m_thd = thd;
-  ddl_arg.m_table = tables->table;
+//override the add_table function
+int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
+	DBUG_ASSERT(tdef != nullptr);
+	
+	int ret = 0;
 
-  Rdb_ddl_manager *ddl_manager = rdb_get_ddl_manager();
-  DBUG_ASSERT(ddl_manager != nullptr);
+	DBUG_ASSERT(m_table != nullptr);
+	Field **field = m_table->field;
+	DBUG_ASSERT(field != nullptr);
 
-  ret = ddl_manager->scan_for_tables(&ddl_arg);
+	Rdb_dict_manager *dict_manager_cur = rdb_get_dict_manager();
+	const std::string &dbname = tdef->base_dbname();
+	const std::string &tablename = tdef->base_tablename();
+	field[RDB_FKINFO_FIELD::FOREIGN_TABLE_SCHEMA]->store(dbname.c_str(), dbname.size(),system_charset_info);
+	field[RDB_FKINFO_FIELD::FOREIGN_TABLE_NAME]->store(tablename.c_str(), tablename.size(), system_charset_info);
+	//for loop to the m_foreign_descr_set
+	const std::set<myrocks::Rdb_fk_def, myrocks::Rdb_fk_compare> &fkset = tdef->m_foreign_descr_set;
+	for(const Rdb_fk_def &fk_info : fkset){
+    Rdb_ddl_manager *ddl_manager_cur = rdb_get_ddl_manager();
+		GL_INDEX_ID foreign_gl_index_id = fk_info.m_foreign_gl_index_id;
+		GL_INDEX_ID referenced_gl_index_id = fk_info.m_referenced_gl_index_id;
+		std::string referenced_tablename = ddl_manager_cur->safe_get_table_name(referenced_gl_index_id);
+		std::string referenced_db;
+		std::string referenced_table;
+		std::string referenced_partname;
 
-  DBUG_RETURN(ret);
+
+    
+		int err = rdb_split_normalized_tablename(referenced_tablename,&referenced_db, &referenced_table, &referenced_partname);
+    if(err != 0){
+      DBUG_RETURN(0);
+    }
+		//DBUG_ASSERT(err == 0);
+
+		std::shared_ptr<const Rdb_key_def> foreign_keydef =ddl_manager_cur->safe_find(foreign_gl_index_id);
+		std::shared_ptr<const Rdb_key_def> referenced_keydef = ddl_manager_cur->safe_find(referenced_gl_index_id);
+
+		const std::string &foreign_col_name = foreign_keydef->get_name();
+		const std::string &referenced_col_name = referenced_keydef->get_name();
+
+		field[RDB_FKINFO_FIELD::FOREIGN_COLUMN_NAME]->store(foreign_col_name.c_str(), foreign_col_name.size(),system_charset_info);
+		field[RDB_FKINFO_FIELD::REFERENCED_TABLE_SCHEMA]->store(referenced_db.c_str(),referenced_db.size(),system_charset_info);
+		field[RDB_FKINFO_FIELD::REFERENCED_TABLE_NAME]->store(referenced_table.c_str(), referenced_table.size(),system_charset_info);
+		field[RDB_FKINFO_FIELD::REFERENCED_COLUMN_NAME]->store(referenced_col_name.c_str(), referenced_col_name.size(), system_charset_info);
+
+		//add the type for the foreign key;
+		field[RDB_FKINFO_FIELD::TYPE]->store(fk_info.m_type,true);
+    if (fk_info.m_type & DICT_FOREIGN_ON_DELETE_CASCADE) {
+      delete_type = "CASCADE";
+    } else if (fk_info.m_type & DICT_FOREIGN_ON_DELETE_SET_NULL) {
+      delete_type = "SET NULL";
+    } else {
+      delete_type = "NO ACTION";
+    }
+
+    if(fk_info.m_type & DICT_FOREIGN_ON_UPDATE_CASCADE) {
+      update_type = "CASCADE";
+    } else if (fk_info.m_type & DICT_FOREIGN_ON_UPDATE_SET_NULL) {
+      update_type = "SET NULL";      
+    } else {
+      update_type = "NO ACTION";
+    }
+
+
+    field[RDB_FKINFO_FIELD::DELETE_TYPE]->store(delete_type.c_str(), delete_type.size(), system_charset_info);
+    field[RDB_FKINFO_FIELD::UPDATE_TYPE]->store(update_type.c_str(), update_type.size(), system_charset_info);
+		ret = my_core::schema_table_store_record(m_thd,m_table);
+		if(ret)
+			return ret;
+	}
+	return HA_EXIT_SUCCESS;
+
+
 }
 
-static int rdb_i_s_fk_init(void *const p) {
+static int rdb_i_s_fkinfo_fill_table(
+		my_core::THD *const thd, my_core::TABLE_LIST *const tables,
+		my_core::Item * const cond MY_ATTRIBUTE((__unused__))){
+	DBUG_ENTER_FUNC();
+
+	DBUG_ASSERT(tables != nullptr);
+	DBUG_ASSERT(tables->table != nullptr);
+	DBUG_ASSERT(tables->table->field != nullptr);
+
+	int ret = 0;
+	uint64_t val;
+
+	rocksdb::DB *const rdb = rdb_get_rocksdb_db();
+
+	if (!rdb){
+		DBUG_RETURN(ret);
+	}
+
+	Rdb_fkinfo_scanner ddl_arg;
+
+	ddl_arg.m_thd = thd;
+	ddl_arg.m_table = tables->table;
+
+	Rdb_ddl_manager *ddl_manager = rdb_get_ddl_manager();
+	DBUG_ASSERT(ddl_manager != nullptr);
+	ret = ddl_manager->scan_for_tables(&ddl_arg);
+
+	DBUG_RETURN(ret);
+
+}
+/*
+	Table Initialize
+*/
+static int rdb_i_s_fkinfo_init(void *const p) {
   DBUG_ENTER_FUNC();
 
   DBUG_ASSERT(p != nullptr);
@@ -1093,11 +1212,12 @@ static int rdb_i_s_fk_init(void *const p) {
 
   schema = (my_core::ST_SCHEMA_TABLE *)p;
 
-  schema->fields_info = rdb_i_s_fk_fields_info;
-  schema->fill_table = rdb_i_s_fk_fill_table;
+  schema->fields_info = rdb_i_s_fkinfo_fields_info;
+  schema->fill_table = rdb_i_s_fkinfo_fill_table;
 
   DBUG_RETURN(0);
 }
+
 
 static int rdb_i_s_cfoptions_init(void *const p) {
   DBUG_ENTER_FUNC();
@@ -1780,19 +1900,19 @@ struct st_mysql_plugin rdb_i_s_ddl = {
 };
 
 struct st_mysql_plugin rdb_i_s_fk = {
-    MYSQL_INFORMATION_SCHEMA_PLUGIN,
-    &rdb_i_s_info,
-    "ROCKSDB_FOREIGN_KEY",
-    "Facebook",
-    "RocksDB foreign key table dictionary",
-    PLUGIN_LICENSE_GPL,
-    rdb_i_s_fk_init,
-    rdb_i_s_deinit,
-    0x0001,  /* version number (0.1) */
-    nullptr, /* status variables */
-    nullptr, /* system variables */
-    nullptr, /* config options */
-    0,       /* flags */
+  MYSQL_INFORMATION_SCHEMA_PLUGIN,
+  &rdb_i_s_info,
+  "ROCKSDB_FKINFO",
+  "Ran Ju",
+  "RocksDB foreign key information",
+  PLUGIN_LICENSE_GPL,
+  rdb_i_s_fkinfo_init,
+  rdb_i_s_deinit,
+  0x0001,                             /* version number (0.1) */
+  nullptr,                            /* status variables */
+  nullptr,                            /* system variables */
+  nullptr,                            /* config options */
+  0,                                  /* flags */
 };
 
 struct st_mysql_plugin rdb_i_s_index_file_map = {

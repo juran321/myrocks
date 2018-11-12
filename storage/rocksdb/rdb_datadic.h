@@ -1057,6 +1057,8 @@ public:
   // 2018/06/11 Quan Zhang Set of foreign key constraints in the table;
   // these refer to columns in other tables;
   Rdb_fk_set m_foreign_descr_set;
+  //2018.11.6
+  const Rdb_fk_set &rdb_fk_set() const {return m_foreign_descr_set;}
 
   // 2018/06/11 Quan Zhang Set of foreign key costraints which refer to
   // this table
