@@ -53,6 +53,16 @@ namespace myrocks {
 #define ROCKSDB_FIELD_INFO_END                                                 \
   ROCKSDB_FIELD_INFO(nullptr, 0, MYSQL_TYPE_NULL, 0)
 
+#define DICT_FOREIGN_ON_DELETE_CASCADE	1	/*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_DELETE_SET_NULL	2	/*!< ON UPDATE SET NULL */
+#define DICT_FOREIGN_ON_UPDATE_CASCADE	4	/*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_UPDATE_SET_NULL	8	/*!< ON UPDATE SET NULL */
+#define DICT_FOREIGN_ON_DELETE_NO_ACTION 16	/*!< ON DELETE NO ACTION */
+#define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32	/*!< ON UPDATE NO ACTION */
+/* @} */
+
+
+
 /*
   Support for INFORMATION_SCHEMA.ROCKSDB_CFSTATS dynamic table
  */
@@ -1067,7 +1077,9 @@ namespace RDB_FKINFO_FIELD{
 		REFERENCED_TABLE_SCHEMA, //referenced table database
 		REFERENCED_TABLE_NAME,  //referenced table name
 		REFERENCED_COLUMN_NAME,  //referenced column name
-		TYPE //TPYE
+		TYPE, //TPYE
+    DELETE_TYPE,
+    UPDATE_TYPE
 	};
 }// namespace RDB_FKINFO_FIELD
 
@@ -1079,6 +1091,8 @@ static ST_FIELD_INFO rdb_i_s_fkinfo_fields_info[] ={
 	ROCKSDB_FIELD_INFO("REFERENCED_TABLE_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
 	ROCKSDB_FIELD_INFO("REFERENCED_COLUMN_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
 	ROCKSDB_FIELD_INFO("TYPE", sizeof(uint16_t), MYSQL_TYPE_SHORT, 0),
+  ROCKSDB_FIELD_INFO("DELETE_TYPE", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+  ROCKSDB_FIELD_INFO("UPDATE_TYPE", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
 	ROCKSDB_FIELD_INFO_END};
 
 //override the add_table function
@@ -1106,6 +1120,10 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 		std::string referenced_db;
 		std::string referenced_table;
 		std::string referenced_partname;
+
+    std::string delete_type;
+    std::string update_type;
+
     int err;
 		err = rdb_split_normalized_tablename(referenced_tablename,&referenced_db, &referenced_table, &referenced_partname);
 
@@ -1123,6 +1141,25 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 
 		//add the type for the foreign key;
 		field[RDB_FKINFO_FIELD::TYPE]->store(fk_info.m_type,true);
+    if (fk_info.m_type & DICT_FOREIGN_ON_DELETE_CASCADE) {
+      delete_type = "CASCADE";
+    } else if (fk_info.m_type & DICT_FOREIGN_ON_DELETE_SET_NULL) {
+      delete_type = "SET NULL";
+    } else {
+      delete_type = "NO ACTION";
+    }
+
+    if(fk_info.m_type & DICT_FOREIGN_ON_UPDATE_CASCADE) {
+      update_type = "CASCADE";
+    } else if (fk_info.m_type & DICT_FOREIGN_ON_UPDATE_SET_NULL) {
+      update_type = "SET NULL";      
+    } else {
+      update_type = "NO ACTION";
+    }
+
+
+    field[RDB_FKINFO_FIELD::DELETE_TYPE]->store(delete_type.c_str(), delete_type.size(), system_charset_info);
+    field[RDB_FKINFO_FIELD::UPDATE_TYPE]->store(update_type.c_str(), update_type.size(), system_charset_info);
 		ret = my_core::schema_table_store_record(m_thd,m_table);
 		if(ret)
 			return ret;
