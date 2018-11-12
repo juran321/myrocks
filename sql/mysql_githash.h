@@ -21,8 +21,10 @@
 */
 #pragma once
 
+
 #define MYSQL_GIT_HASH "0e4f81e4edbcfe2fd0f1b0c81d9e2179721afb87"
 #define MYSQL_GIT_DATE "2018-11-12T19:36:36+00:00"
+
 
 #define ROCKSDB_GIT_HASH "6c73a4669353e57ad4b2b16cc6a9a8eb9d27a819"
 #define ROCKSDB_GIT_DATE "2018-05-22T13:57:17-07:00"
