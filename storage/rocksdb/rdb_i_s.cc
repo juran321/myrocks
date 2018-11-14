@@ -1077,7 +1077,6 @@ namespace RDB_FKINFO_FIELD{
 		REFERENCED_TABLE_SCHEMA, //referenced table database
 		REFERENCED_TABLE_NAME,  //referenced table name
 		REFERENCED_COLUMN_NAME,  //referenced column name
-		TYPE, //TPYE
     DELETE_TYPE,
     UPDATE_TYPE
 	};
@@ -1090,7 +1089,6 @@ static ST_FIELD_INFO rdb_i_s_fkinfo_fields_info[] ={
 	ROCKSDB_FIELD_INFO("REFERENCED_TABLE_SCHEMA", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
 	ROCKSDB_FIELD_INFO("REFERENCED_TABLE_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
 	ROCKSDB_FIELD_INFO("REFERENCED_COLUMN_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
-	ROCKSDB_FIELD_INFO("TYPE", sizeof(uint16_t), MYSQL_TYPE_SHORT, 0),
   ROCKSDB_FIELD_INFO("DELETE_TYPE", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
   ROCKSDB_FIELD_INFO("UPDATE_TYPE", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
 	ROCKSDB_FIELD_INFO_END};
@@ -1119,15 +1117,13 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 		std::string referenced_tablename = ddl_manager_cur->safe_get_table_name(referenced_gl_index_id);
 		std::string referenced_db;
 		std::string referenced_table;
-		std::string referenced_partname;
+    std::string delete_type;
+    std::string update_type;
 
-
-    
-		int err = rdb_split_normalized_tablename(referenced_tablename,&referenced_db, &referenced_table, &referenced_partname);
+		int err = rdb_split_normalized_tablename(referenced_tablename,&referenced_db, &referenced_table);
     if(err != 0){
       DBUG_RETURN(0);
     }
-		//DBUG_ASSERT(err == 0);
 
 		std::shared_ptr<const Rdb_key_def> foreign_keydef =ddl_manager_cur->safe_find(foreign_gl_index_id);
 		std::shared_ptr<const Rdb_key_def> referenced_keydef = ddl_manager_cur->safe_find(referenced_gl_index_id);
@@ -1140,8 +1136,6 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 		field[RDB_FKINFO_FIELD::REFERENCED_TABLE_NAME]->store(referenced_table.c_str(), referenced_table.size(),system_charset_info);
 		field[RDB_FKINFO_FIELD::REFERENCED_COLUMN_NAME]->store(referenced_col_name.c_str(), referenced_col_name.size(), system_charset_info);
 
-		//add the type for the foreign key;
-		field[RDB_FKINFO_FIELD::TYPE]->store(fk_info.m_type,true);
     if (fk_info.m_type & DICT_FOREIGN_ON_DELETE_CASCADE) {
       delete_type = "CASCADE";
     } else if (fk_info.m_type & DICT_FOREIGN_ON_DELETE_SET_NULL) {
@@ -1157,7 +1151,6 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
     } else {
       update_type = "NO ACTION";
     }
-
 
     field[RDB_FKINFO_FIELD::DELETE_TYPE]->store(delete_type.c_str(), delete_type.size(), system_charset_info);
     field[RDB_FKINFO_FIELD::UPDATE_TYPE]->store(update_type.c_str(), update_type.size(), system_charset_info);
