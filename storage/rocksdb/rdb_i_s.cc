@@ -1102,7 +1102,6 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 	DBUG_ASSERT(m_table != nullptr);
 	Field **field = m_table->field;
 	DBUG_ASSERT(field != nullptr);
-
 	Rdb_dict_manager *dict_manager_cur = rdb_get_dict_manager();
 	const std::string &dbname = tdef->base_dbname();
 	const std::string &tablename = tdef->base_tablename();
@@ -1111,7 +1110,6 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 	/* for loop to the m_foreign_descr_set */
 	const std::set<myrocks::Rdb_fk_def, myrocks::Rdb_fk_compare> &fkset = tdef->m_foreign_descr_set;
 	for(const Rdb_fk_def &fk_info : fkset){
-
     Rdb_ddl_manager *ddl_manager_cur = rdb_get_ddl_manager();
 		GL_INDEX_ID foreign_gl_index_id = fk_info.m_foreign_gl_index_id;
 		GL_INDEX_ID referenced_gl_index_id = fk_info.m_referenced_gl_index_id;
