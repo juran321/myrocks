@@ -1108,7 +1108,7 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef){
 	const std::string &tablename = tdef->base_tablename();
 	field[RDB_FKINFO_FIELD::FOREIGN_TABLE_SCHEMA]->store(dbname.c_str(), dbname.size(),system_charset_info);
 	field[RDB_FKINFO_FIELD::FOREIGN_TABLE_NAME]->store(tablename.c_str(), tablename.size(), system_charset_info);
-	//for loop to the m_foreign_descr_set
+	/* for loop to the m_foreign_descr_set */
 	const std::set<myrocks::Rdb_fk_def, myrocks::Rdb_fk_compare> &fkset = tdef->m_foreign_descr_set;
 	for(const Rdb_fk_def &fk_info : fkset){
     Rdb_ddl_manager *ddl_manager_cur = rdb_get_ddl_manager();
