@@ -31,7 +31,8 @@
 #include <set>
 #include <string>
 #include <vector>
-
+#include <stdlib.h>
+#include <string.h>
 /* MySQL includes */
 #include "./debug_sync.h"
 #include "./my_bit.h"
@@ -7428,10 +7429,10 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
 
       while (true) {
         // Scan from our current pos looking for 'FOREIGN'
-        str = rdb_find_in_string(str, "ON", &success);
-        if (!success) {
-          break;
-        }
+        // rdb_find_in_string(str, "ON", &success);
+        // if (!success) {
+        //   break;
+        // }
         str = rdb_check_next_token(&my_charset_bin, str, "ON", &success);
         if (success) {
           str = rdb_check_next_token(&my_charset_bin, str, "DELETE", &success);
@@ -7446,6 +7447,8 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
           } else {
             is_on_delete = true;
           }
+        }else{
+          break;
         }
 
         str = rdb_check_next_token(&my_charset_bin, str, "RESTRICT", &success);
