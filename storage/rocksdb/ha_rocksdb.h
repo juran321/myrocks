@@ -103,7 +103,7 @@ struct Rdb_deadlock_info {
     std::string index_name;
     std::string table_name;
   };
-  std::vector <Rdb_dl_trx_info> path;
+  std::vector<Rdb_dl_trx_info> path;
   ulonglong victim_trx_id;
 };
 
@@ -307,12 +307,12 @@ const char *const RDB_TTL_COL_QUALIFIER = "ttl_col";
 /** The flags for ON_UPDATE and ON_DELETE can be ORed; the default is that
 a foreign key constraint is enforced, therefore RESTRICT just means no flag */
 /* @{ */
-#define DICT_FOREIGN_ON_DELETE_CASCADE	1	/*!< ON DELETE CASCADE */
-#define DICT_FOREIGN_ON_DELETE_SET_NULL	2	/*!< ON UPDATE SET NULL */
-#define DICT_FOREIGN_ON_UPDATE_CASCADE	4	/*!< ON DELETE CASCADE */
-#define DICT_FOREIGN_ON_UPDATE_SET_NULL	8	/*!< ON UPDATE SET NULL */
-#define DICT_FOREIGN_ON_DELETE_NO_ACTION 16	/*!< ON DELETE NO ACTION */
-#define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32	/*!< ON UPDATE NO ACTION */
+#define DICT_FOREIGN_ON_DELETE_CASCADE 1    /*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_DELETE_SET_NULL 2   /*!< ON UPDATE SET NULL */
+#define DICT_FOREIGN_ON_UPDATE_CASCADE 4    /*!< ON DELETE CASCADE */
+#define DICT_FOREIGN_ON_UPDATE_SET_NULL 8   /*!< ON UPDATE SET NULL */
+#define DICT_FOREIGN_ON_DELETE_NO_ACTION 16 /*!< ON DELETE NO ACTION */
+#define DICT_FOREIGN_ON_UPDATE_NO_ACTION 32 /*!< ON UPDATE NO ACTION */
 /* @} */
 
 /**
@@ -343,7 +343,7 @@ struct Rdb_table_handler {
   uint64_t m_mtcache_last_update;
 
   // 2018/07/02 Quan Zhang Have a copy of table definition here
-  TABLE* m_table;
+  TABLE *m_table;
 };
 
 class Rdb_key_def;
@@ -805,7 +805,7 @@ public:
 
   ha_rocksdb(my_core::handlerton *const hton,
              my_core::TABLE_SHARE *const table_arg);
-  ha_rocksdb(const ha_rocksdb& other);
+  ha_rocksdb(const ha_rocksdb &other);
   ~ha_rocksdb() {
     int err MY_ATTRIBUTE((__unused__));
     err = finalize_bulk_load(false);
@@ -933,10 +933,10 @@ public:
   static const std::vector<std::string> parse_into_tokens(const std::string &s,
                                                           const char delim);
 
-  static const std::string generate_cf_name(const uint index,
-    const TABLE *const table_arg,
-    const Rdb_tbl_def *const tbl_def_arg,
-    bool *per_part_match_found);
+  static const std::string
+  generate_cf_name(const uint index, const TABLE *const table_arg,
+                   const Rdb_tbl_def *const tbl_def_arg,
+                   bool *per_part_match_found);
 
   static const char *get_key_name(const uint index,
                                   const TABLE *const table_arg,
@@ -1226,29 +1226,24 @@ private:
                          const rocksdb::Slice *key,
                          struct unique_sk_buf_info *sk_info)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
-  int check_key_in_other_table(const Rdb_key_def &my_key_def,
-                               const GL_INDEX_ID &my_gl_index_id,
-                               const GL_INDEX_ID &other_gl_index_id,
-                               const uchar *const buf,
-                               Rdb_transaction *tx,
-                               bool *const found,
-                               Rdb_table_handler **const other_tbl_handler = nullptr,
-                               std::string *const other_tbl_full_name = nullptr,
-                               Rdb_tbl_def **const other_tbl_def = nullptr,
-                               rocksdb::Slice *const other_tbl_part_key = nullptr,
-                               std::unique_ptr<rocksdb::Iterator> *const other_tbl_iter = nullptr,
-                               uint *const other_tbl_index_key_id = nullptr)
+  int check_key_in_other_table(
+      const Rdb_key_def &my_key_def, const GL_INDEX_ID &my_gl_index_id,
+      const GL_INDEX_ID &other_gl_index_id, const uchar *const buf,
+      Rdb_transaction *tx, bool *const found,
+      Rdb_table_handler **const other_tbl_handler = nullptr,
+      std::string *const other_tbl_full_name = nullptr,
+      Rdb_tbl_def **const other_tbl_def = nullptr,
+      rocksdb::Slice *const other_tbl_part_key = nullptr,
+      std::unique_ptr<rocksdb::Iterator> *const other_tbl_iter = nullptr,
+      uint *const other_tbl_index_key_id = nullptr)
       MY_ATTRIBUTE((__warn_unused_result__));
-  int check_fk_constraint_on_foreign_table(const uint &key_id,
-                                           const Rdb_key_def &kd,
-                                           const uchar *const old_data,
-                                           const uchar *const new_data,
-                                           Rdb_transaction *tx,
-                                           const bool is_update)
+  int check_fk_constraint_on_foreign_table(
+      const uint &key_id, const Rdb_key_def &kd, const uchar *const old_data,
+      const uchar *const new_data, Rdb_transaction *tx, const bool is_update)
       MY_ATTRIBUTE((__warn_unused_result__));
-  int check_fk_constraint_on_referenced_table(const uint &key_id,
-                                              const Rdb_key_def &kd,
-                                              const struct update_row_info &row_info)
+  int check_fk_constraint_on_referenced_table(
+      const uint &key_id, const Rdb_key_def &kd,
+      const struct update_row_info &row_info)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
   int bulk_load_key(Rdb_transaction *const tx, const Rdb_key_def &kd,
                     const rocksdb::Slice &key, const rocksdb::Slice &value,

@@ -204,16 +204,17 @@ public:
   /* Pack the hidden primary key into mem-comparable form. */
   uint pack_hidden_pk(const longlong &hidden_pk_id,
                       uchar *const packed_tuple) const;
-  /* 2018/07/03 Quan Zhang Convert a key from record format in other table to the key as mem-comparable form. */
-  uint pack_key_from_other_table(const TABLE *const other_tbl, const TABLE *const my_tbl,
-                   const Rdb_key_def& other_tbl_key_def,
-                   uchar *const pack_buffer, const uchar *const record,
-                   uchar *const packed_tuple) const;
-  int unpack_field(Rdb_field_packing *const fpi,
-                   Field *const             field,
-                   Rdb_string_reader*       reader,
-                   const uchar *const       default_value,
-                   Rdb_string_reader*       unp_reader) const;
+  /* 2018/07/03 Quan Zhang Convert a key from record format in other table to
+   * the key as mem-comparable form. */
+  uint pack_key_from_other_table(const TABLE *const other_tbl,
+                                 const TABLE *const my_tbl,
+                                 const Rdb_key_def &other_tbl_key_def,
+                                 uchar *const pack_buffer,
+                                 const uchar *const record,
+                                 uchar *const packed_tuple) const;
+  int unpack_field(Rdb_field_packing *const fpi, Field *const field,
+                   Rdb_string_reader *reader, const uchar *const default_value,
+                   Rdb_string_reader *unp_reader) const;
   int unpack_record(TABLE *const table, uchar *const buf,
                     const rocksdb::Slice *const packed_key,
                     const rocksdb::Slice *const unpack_info,
@@ -382,7 +383,7 @@ public:
   // bit flags for combining bools when writing to disk
   enum {
     REVERSE_CF_FLAG = 1,
-    AUTO_CF_FLAG = 2,  // Deprecated
+    AUTO_CF_FLAG = 2, // Deprecated
     PER_PARTITION_CF_FLAG = 4,
   };
 
@@ -411,7 +412,7 @@ public:
     MAX_INDEX_ID = 7,
     DDL_CREATE_INDEX_ONGOING = 8,
     AUTO_INC = 9,
-    FK_DEFINITION = 10,  // 2018/06/11 Quan Zhang add FK data dictionary type
+    FK_DEFINITION = 10, // 2018/06/11 Quan Zhang add FK data dictionary type
     END_DICT_INDEX_ID = 255
   };
 
@@ -432,7 +433,7 @@ public:
   // INDEX_INFO layout. Update INDEX_INFO_VERSION_LATEST to point to the
   // latest version number.
   enum {
-    INDEX_INFO_VERSION_INITIAL = 1,  // Obsolete
+    INDEX_INFO_VERSION_INITIAL = 1, // Obsolete
     INDEX_INFO_VERSION_KV_FORMAT,
     INDEX_INFO_VERSION_GLOBAL_ID,
     // There is no change to data format in this version, but this version
@@ -663,7 +664,7 @@ public:
                               const Field *const field,
                               Rdb_string_reader *const reader) const;
 
-  Rdb_field_packing* get_field_packing() const { return m_pack_info; }
+  Rdb_field_packing *get_field_packing() const { return m_pack_info; }
 
   inline bool use_legacy_varbinary_format() const {
     return !index_format_min_check(PRIMARY_FORMAT_VERSION_UPDATE2,
@@ -674,7 +675,7 @@ public:
     return c == RDB_UNPACK_DATA_TAG || c == RDB_UNPACK_COVERED_DATA_TAG;
   }
 
- private:
+private:
 #ifndef DBUG_OFF
   inline bool is_storage_available(const int &offset, const int &needed) const {
     const int storage_length = static_cast<int>(max_storage_fmt_length());
@@ -699,7 +700,7 @@ public:
 
   uint calc_unpack_variable_format(uchar flag, bool *done) const;
 
- public:
+public:
   uint16_t m_index_dict_version;
   uchar m_index_type;
   /* KV format version for the index id */
@@ -735,7 +736,7 @@ public:
   /* TTL column (if defined by user, otherwise implicit TTL is used) */
   std::string m_ttl_column;
 
- private:
+private:
   friend class Rdb_tbl_def; // for m_index_number above
 
   /* Number of key parts in the primary key*/
@@ -974,6 +975,8 @@ inline bool Rdb_key_def::has_unpack_info(const uint &kp) const {
 
 // 2018/06/07 Quan Zhang A foreign key definition
 struct Rdb_fk_def {
+  /* foreign key unique id*/
+  std::string id;
   /* foreign index */
   GL_INDEX_ID m_foreign_gl_index_id;
   /* referenced index*/
@@ -983,17 +986,19 @@ struct Rdb_fk_def {
 
 struct Rdb_fk_compare {
   bool operator()(const Rdb_fk_def &lhs, const Rdb_fk_def &rhs) const {
-    if (lhs.m_foreign_gl_index_id.cf_id == rhs.m_foreign_gl_index_id.cf_id)
-    {
-      if (lhs.m_foreign_gl_index_id.index_id == rhs.m_foreign_gl_index_id.index_id)
-      {
-        if (lhs.m_referenced_gl_index_id.cf_id == rhs.m_referenced_gl_index_id.cf_id)
-        {
-          return (lhs.m_referenced_gl_index_id.index_id < rhs.m_referenced_gl_index_id.index_id);
+    if (lhs.m_foreign_gl_index_id.cf_id == rhs.m_foreign_gl_index_id.cf_id) {
+      if (lhs.m_foreign_gl_index_id.index_id ==
+          rhs.m_foreign_gl_index_id.index_id) {
+        if (lhs.m_referenced_gl_index_id.cf_id ==
+            rhs.m_referenced_gl_index_id.cf_id) {
+          return (lhs.m_referenced_gl_index_id.index_id <
+                  rhs.m_referenced_gl_index_id.index_id);
         }
-        return (lhs.m_referenced_gl_index_id.cf_id < rhs.m_referenced_gl_index_id.cf_id);
+        return (lhs.m_referenced_gl_index_id.cf_id <
+                rhs.m_referenced_gl_index_id.cf_id);
       }
-      return (lhs.m_foreign_gl_index_id.index_id < rhs.m_foreign_gl_index_id.index_id);
+      return (lhs.m_foreign_gl_index_id.index_id <
+              rhs.m_foreign_gl_index_id.index_id);
     }
     return (lhs.m_foreign_gl_index_id.cf_id < rhs.m_foreign_gl_index_id.cf_id);
   }
@@ -1051,14 +1056,14 @@ public:
   /* Array of index descriptors */
   std::shared_ptr<Rdb_key_def> *m_key_descr_arr;
 
-  bool find_key_gl_index_by_name(const std::string& col_name,
-                                GL_INDEX_ID& gl_index);
+  bool find_key_gl_index_by_name(const std::string &col_name,
+                                 GL_INDEX_ID &gl_index);
 
   // 2018/06/11 Quan Zhang Set of foreign key constraints in the table;
   // these refer to columns in other tables;
   Rdb_fk_set m_foreign_descr_set;
-  //2018.11.6
-  const Rdb_fk_set &rdb_fk_set() const {return m_foreign_descr_set;}
+  // 2018.11.6
+  const Rdb_fk_set &rdb_fk_set() const { return m_foreign_descr_set; }
 
   // 2018/06/11 Quan Zhang Set of foreign key costraints which refer to
   // this table
@@ -1126,7 +1131,7 @@ class Rdb_ddl_manager {
   // Maps index id to key definitons not yet committed to data dictionary.
   // This is mainly used to store key definitions during ALTER TABLE.
   std::map<GL_INDEX_ID, std::shared_ptr<Rdb_key_def>>
-    m_index_num_to_uncommitted_keydef;
+      m_index_num_to_uncommitted_keydef;
   mysql_rwlock_t m_rwlock;
 
   Rdb_seq_generator m_sequence;
@@ -1365,12 +1370,14 @@ public:
                       struct Rdb_index_info *const index_info) const;
 
   /* 2018/06/11 Quan Zhang FK Index => RF Index */
-  void put_fk_def(rocksdb::WriteBatch *const batch, const GL_INDEX_ID &foreign_gl_index_id,
-                                    const GL_INDEX_ID &referenced_gl_index_id,
-                                    const uint32_t &type);
+  void put_fk_def(rocksdb::WriteBatch *const batch,
+                  const GL_INDEX_ID &foreign_gl_index_id,
+                  const GL_INDEX_ID &referenced_gl_index_id,
+                  const uint32_t &type, const std::string &id);
   void get_fk_defs(const GL_INDEX_ID &gl_index_id,
                    struct std::vector<Rdb_fk_def> &fk_def_vec) const;
-  void delete_fk_def(rocksdb::WriteBatch *const batch, const GL_INDEX_ID &gl_index_id);
+  void delete_fk_def(rocksdb::WriteBatch *const batch,
+                     const GL_INDEX_ID &gl_index_id);
 
   /* CF id => CF flags */
   void add_cf_flags(rocksdb::WriteBatch *const batch, const uint &cf_id,
@@ -1477,7 +1484,7 @@ struct Rdb_index_info {
 
  */
 class Rdb_system_merge_op : public rocksdb::AssociativeMergeOperator {
- public:
+public:
   /*
     Updates the new value associated with a key to be the maximum of the
     passed in value and the existing value.
@@ -1519,7 +1526,7 @@ class Rdb_system_merge_op : public rocksdb::AssociativeMergeOperator {
 
   virtual const char *Name() const override { return "Rdb_system_merge_op"; }
 
- private:
+private:
   /*
     Serializes the integer data to the new_value buffer or the target buffer
     the merge operator will update to

@@ -19,9 +19,9 @@
 
 /* C++ standard header files */
 #include <array>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
 
 /* C standard header files */
 #include <ctype.h>
@@ -130,7 +130,8 @@ const char *rdb_check_next_token(const struct charset_info_st *const cs,
   Parse id
 */
 const char *rdb_parse_id(const struct charset_info_st *const cs,
-                         const char *str, std::string *const id) {
+                         const char *str, std::string *const id,
+                         const bool &contain_dot) {
   // Move past any spaces
   str = rdb_skip_spaces(cs, str);
 
@@ -163,10 +164,19 @@ const char *rdb_parse_id(const struct charset_info_st *const cs,
       len++;
     }
   } else {
-    while (!my_isspace(cs, *str) && *str != '(' && *str != ')' && *str != '.' &&
-           *str != ',' && *str != '\0') {
-      str++;
-      len++;
+    if (contain_dot) {
+      while (!my_isspace(cs, *str) && *str != '(' && *str != ')' &&
+             *str != ',' && *str != '\0') {
+        str++;
+        len++;
+      }
+    } else {
+
+      while (!my_isspace(cs, *str) && *str != '(' && *str != ')' &&
+             *str != '.' && *str != ',' && *str != '\0') {
+        str++;
+        len++;
+      }
     }
   }
 
@@ -196,8 +206,8 @@ const char *rdb_skip_id(const struct charset_info_st *const cs,
 /*
   Parses a given string into tokens (if any) separated by a specific delimiter.
 */
-const std::vector<std::string> parse_into_tokens(
-  const std::string& s, const char delim) {
+const std::vector<std::string> parse_into_tokens(const std::string &s,
+                                                 const char delim) {
   std::vector<std::string> tokens;
   std::string t;
   std::stringstream ss(s);

@@ -1076,7 +1076,8 @@ enum {
   REFERENCED_TABLE_NAME,    // referenced table name
   REFERENCED_COLUMN_NAME,   // referenced column name
   DELETE_TYPE,
-  UPDATE_TYPE
+  UPDATE_TYPE,
+  FK_ID
 };
 } // namespace RDB_FKINFO_FIELD
 
@@ -1095,6 +1096,7 @@ static ST_FIELD_INFO rdb_i_s_fkinfo_fields_info[] = {
                        MYSQL_TYPE_STRING, 0),
     ROCKSDB_FIELD_INFO("DELETE_TYPE", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
     ROCKSDB_FIELD_INFO("UPDATE_TYPE", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
+    ROCKSDB_FIELD_INFO("FK_ID", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
     ROCKSDB_FIELD_INFO_END};
 
 // override the add_table function
@@ -1171,6 +1173,8 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef) {
         delete_type.c_str(), delete_type.size(), system_charset_info);
     field[RDB_FKINFO_FIELD::UPDATE_TYPE]->store(
         update_type.c_str(), update_type.size(), system_charset_info);
+    field[RDB_FKINFO_FIELD::FK_ID]->store(
+        fk_info.id.c_str(), fk_info.id.size(), system_charset_info);    
     ret = my_core::schema_table_store_record(m_thd, m_table);
     if (ret)
       return ret;
