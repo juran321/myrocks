@@ -413,6 +413,7 @@ public:
     DDL_CREATE_INDEX_ONGOING = 8,
     AUTO_INC = 9,
     FK_DEFINITION = 10, // 2018/06/11 Quan Zhang add FK data dictionary type
+    FK_SET = 11,
     END_DICT_INDEX_ID = 255
   };
 
@@ -1299,7 +1300,11 @@ private:
 
   10. foreign key entry
   key: Rdb_key_def::FK_DEFINITION(0x10) + cf_id (which table) + index_id
-  value: referened_cf_id (which table), referened_index_id, type
+  value: referened_cf_id (which table), referened_index_id, type, unique id;
+
+  11. foreign key set
+  key: Rdb_key_def::FK_SET(0X11)
+  value: fk_id
 
   Data dictionary operations are atomic inside RocksDB. For example,
   when creating a table with two indexes, it is necessary to call Put
@@ -1378,6 +1383,10 @@ public:
                    struct std::vector<Rdb_fk_def> &fk_def_vec) const;
   void delete_fk_def(rocksdb::WriteBatch *const batch,
                      const GL_INDEX_ID &gl_index_id);
+  /* 2018/11/26 Ran Ju FK id set */
+  void put_fk_set(rocksdb::WriteBatch *const batch,
+                  struct Rdb_fk_def &fk_def) const;
+  bool get_fk_id(const std::string &fk_id) const;
 
   /* CF id => CF flags */
   void add_cf_flags(rocksdb::WriteBatch *const batch, const uint &cf_id,

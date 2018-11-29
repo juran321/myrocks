@@ -1173,8 +1173,8 @@ int Rdb_fkinfo_scanner::add_table(Rdb_tbl_def *tdef) {
         delete_type.c_str(), delete_type.size(), system_charset_info);
     field[RDB_FKINFO_FIELD::UPDATE_TYPE]->store(
         update_type.c_str(), update_type.size(), system_charset_info);
-    field[RDB_FKINFO_FIELD::FK_ID]->store(
-        fk_info.id.c_str(), fk_info.id.size(), system_charset_info);    
+    field[RDB_FKINFO_FIELD::FK_ID]->store(fk_info.id.c_str(), fk_info.id.size(),
+                                          system_charset_info);
     ret = my_core::schema_table_store_record(m_thd, m_table);
     if (ret)
       return ret;

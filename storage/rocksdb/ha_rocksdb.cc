@@ -7046,9 +7046,12 @@ int ha_rocksdb::create_key_def(const TABLE *const table_arg, const uint &i,
 
   const char *key_name = get_key_name(i, table_arg, m_tbl_def);
 
-  if (std::string(key_name) == "PRIMARY") {
-    KEY *key_info = &table_arg->key_info[i];
-    KEY_PART_INFO *key_part = key_info->key_part;
+  KEY *key_info = &table_arg->key_info[i];
+  KEY_PART_INFO *key_part = key_info->key_part;
+
+  if (std::string(key_name) == "PRIMARY" ||
+      std::string(key_name) != "HIDDEN_PK_ID") {
+
     key_name = key_part->field->field_name;
   }
 
@@ -7309,11 +7312,11 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
   }
 
   dict_manager.lock();
-  err = ddl_manager.put_and_write(m_tbl_def, batch);
-  if (err != HA_EXIT_SUCCESS) {
-    dict_manager.unlock();
-    goto error;
-  }
+  // err = ddl_manager.put_and_write(m_tbl_def, batch);
+  // if (err != HA_EXIT_SUCCESS) {
+  //   dict_manager.unlock();
+  //   goto error;
+  // }
 
   if (has_foreign_key) {
     bool success;
@@ -7322,29 +7325,35 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
     DBUG_ASSERT(str != nullptr);
 
     while (*str != '\0') {
-      // std::string s = str;
+      Rdb_fk_def fk_def;
+      bool has_constraint;
+      const char *constraint_str =
+          rdb_find_in_string(str, "CONSTRAINT", &has_constraint);
+      if (has_constraint) {
+        const char *foreign_str = rdb_find_in_string(str, "FOREIGN", &success);
+        if (!success) {
+          break;
+        }
+        std::string constraint_string = constraint_str;
+        std::string foreign_string = foreign_str;
+        if (constraint_string.length() > foreign_string.length()) {
+          str = rdb_find_in_string(str, "CONSTRAINT", &success);
+          str = rdb_check_next_token(&my_charset_bin, str, "CONSTRAINT",
+                                     &success);
+          DBUG_ASSERT(success);
+          std::string fk_name;
+          rdb_parse_id(&my_charset_bin, str, &fk_name);
 
-      // const char *foreign_str = rdb_find_in_string(str, "FOREIGN", &success);
-      // if(!success){
-      //   break;
-      // }
-      // const char *constraint_str = rdb_find_in_string(str, "CONSTRAINT",
-      // &success); std::string foreign_string = foreign_str; std::string
-      // constraint_string = constraint_str; if(foreign_str == ""){
-      //   break;
-      // } else {
-      //   // if "CONSTRAINT" in front of "FOREIGN"
-      //   if(constraint_str != "" && constraint_string.size() >
-      //   foreign_string.size()){
-      //     str = rdb_find_in_string(str, "CONSTRAINT", &success);
-      //     str = rdb_check_next_token(&my_charset_bin, str, "CONSTRAINT",
-      //     &success); DBUG_ASSERT(success); if (!success) {
-      //       break;
-      //     }
-      //     rdb_parse_id(&my_charset_bin, str, &fk_id);
-
-      //   }
-      // }
+          fk_def.id = fk_name;
+          // if it is not unique, then break
+          if (dict_manager.get_fk_id(fk_name) == true) {
+            // ddl_manager.remove(m_tbl_def,batch, true);
+            err = HA_ERR_CANNOT_ADD_FOREIGN;
+            dict_manager.unlock();
+            goto error;
+          }
+        }
+      }
       // Scan from our current pos looking for 'FOREIGN'
       str = rdb_find_in_string(str, "FOREIGN", &success);
       if (!success) {
@@ -7380,13 +7389,14 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       }
 
       // TODO: handle multple foreign key columns
-      Rdb_fk_def fk_def;
-      std::string col_name;
 
+      std::string col_name;
       rdb_parse_id(&my_charset_bin, str, &col_name);
       bool found = m_tbl_def->find_key_gl_index_by_name(
           col_name, fk_def.m_foreign_gl_index_id);
       if (!found) {
+
+        // ddl_manager.remove(m_tbl_def,batch,true);
         err = HA_ERR_CANNOT_ADD_FOREIGN;
         dict_manager.unlock();
         goto error;
@@ -7426,17 +7436,9 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
 
       auto referenced_tdef = ddl_manager.find(full_referenced_table_name);
 
-      std::string connector =
-          m_tbl_def->base_tablename() + "_" + referenced_table_name;
+      std::string constraint_name_by_default =
+          m_tbl_def->full_tablename() + "_" + full_referenced_table_name;
       std::unordered_map<std::string, int> counter;
-      auto count = counter.find(connector);
-      std::string num = "1";
-      if (count == counter.end()) {
-        counter.insert(std::make_pair(connector, 1));
-      } else {
-        counter.insert(std::make_pair(connector, count->second + 1));
-        num = std::to_string(count->second + 1);
-      }
 
       str = rdb_check_next_token(&my_charset_bin, str, referenced_name.c_str(),
                                  &success);
@@ -7453,6 +7455,7 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       found = referenced_tdef->find_key_gl_index_by_name(
           ref_col_name, fk_def.m_referenced_gl_index_id);
       if (!found) {
+        // ddl_manager.remove(m_tbl_def,batch,true);
         err = HA_ERR_CANNOT_ADD_FOREIGN;
         dict_manager.unlock();
         goto error;
@@ -7470,7 +7473,7 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       uint32_t type =
           DICT_FOREIGN_ON_DELETE_NO_ACTION | DICT_FOREIGN_ON_UPDATE_NO_ACTION;
       bool is_on_delete = false;
-      std::string fk_id = "fk_" + connector + "_" + num;
+      std::string fk_id = "fk_" + constraint_name_by_default;
       while (true) {
 
         str = rdb_check_next_token(&my_charset_bin, str, "ON", &success);
@@ -7480,6 +7483,7 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
             str =
                 rdb_check_next_token(&my_charset_bin, str, "UPDATE", &success);
             if (!success) {
+              ddl_manager.remove(m_tbl_def, batch, true);
               err = HA_ERR_CANNOT_ADD_FOREIGN;
               dict_manager.unlock();
               goto error;
@@ -7534,23 +7538,34 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
           }
         }
       }
-      fk_def.id = fk_id;
+      if (!has_constraint) {
+        fk_def.id = fk_id;
+      }
+
       dict_manager.put_fk_def(batch, fk_def.m_foreign_gl_index_id,
-                              fk_def.m_referenced_gl_index_id, type, fk_id);
+                              fk_def.m_referenced_gl_index_id, type, fk_def.id);
       fk_def.m_type = type;
       m_tbl_def->m_foreign_descr_set.insert(fk_def);
       referenced_tdef->m_referenced_descr_set.insert(fk_def);
+      dict_manager.put_fk_set(batch, fk_def);
     }
+
     str = rdb_skip_spaces(&my_charset_bin, str);
     if (*str != '\0') {
+      ddl_manager.remove(m_tbl_def, batch, true);
       err = HA_ERR_CANNOT_ADD_FOREIGN;
       dict_manager.unlock();
       goto error;
     }
   }
-
+  err = ddl_manager.put_and_write(m_tbl_def, batch);
+  if (err != HA_EXIT_SUCCESS) {
+    dict_manager.unlock();
+    goto error;
+  }
   err = dict_manager.commit(batch);
   if (err != HA_EXIT_SUCCESS) {
+    ddl_manager.remove(m_tbl_def, batch, true);
     dict_manager.unlock();
     goto error;
   }

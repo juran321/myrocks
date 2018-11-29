@@ -27,6 +27,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <stdio.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -158,7 +159,12 @@ void Rdb_key_def::setup(const TABLE *const tbl,
       key_info = &tbl->key_info[m_keyno];
       if (!hidden_pk_exists)
         pk_info = &tbl->key_info[tbl->s->primary_key];
-      m_name = std::string(key_info->name);
+      if (std::string(key_info->name) == "PRIMARY") {
+        m_name = std::string(key_info->name);
+      } else {
+        m_name = std::string(key_info->key_part->field->field_name);
+      }
+
     } else {
       m_name = HIDDEN_PK_NAME;
     }
@@ -4975,6 +4981,61 @@ void Rdb_dict_manager::get_fk_defs(
 void Rdb_dict_manager::delete_fk_def(rocksdb::WriteBatch *const batch,
                                      const GL_INDEX_ID &gl_index_id) {
   delete_with_prefix(batch, Rdb_key_def::FK_DEFINITION, gl_index_id);
+}
+
+void Rdb_dict_manager::put_fk_set(rocksdb::WriteBatch *const batch,
+                                  struct Rdb_fk_def &fk_def) const {
+  uchar *id_toChar = (uchar *)(fk_def.id.c_str());
+  uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE + fk_def.id.length()] = {0};
+  uchar value_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 5] = {0};
+  rdb_netbuf_store_uint32(key_buf, Rdb_key_def::FK_SET);
+  uchar *ptr = key_buf;
+  std::string temp = fk_def.id.c_str();
+  unsigned char *val = new unsigned char[temp.length() + 1];
+  strcpy((char *)val, temp.c_str());
+  for (int i = 0; i < temp.length() + 1; i++) {
+    rdb_netbuf_store_byte(ptr + 1, val[i]);
+    ptr = ptr + 1;
+  }
+
+  const rocksdb::Slice key = rocksdb::Slice((char *)key_buf, sizeof(key_buf));
+  rdb_netbuf_store_uint32(value_buf, fk_def.m_type);
+  rdb_netbuf_store_uint32(value_buf + Rdb_key_def::INDEX_NUMBER_SIZE,
+                          fk_def.m_foreign_gl_index_id.cf_id);
+  rdb_netbuf_store_uint32(value_buf + 2 * Rdb_key_def::INDEX_NUMBER_SIZE,
+                          fk_def.m_foreign_gl_index_id.index_id);
+  rdb_netbuf_store_uint32(value_buf + 3 * Rdb_key_def::INDEX_NUMBER_SIZE,
+                          fk_def.m_referenced_gl_index_id.cf_id);
+  rdb_netbuf_store_uint32(value_buf + 4 * Rdb_key_def::INDEX_NUMBER_SIZE,
+                          fk_def.m_referenced_gl_index_id.index_id);
+  rdb_netbuf_store_uint32(value_buf + 5 * Rdb_key_def::INDEX_NUMBER_SIZE,
+                          fk_def.m_type);
+  const rocksdb::Slice value =
+      rocksdb::Slice((char *)value_buf, sizeof(value_buf));
+  batch->Put(m_system_cfh, key, value);
+}
+
+bool Rdb_dict_manager::get_fk_id(const std::string &fk_id) const {
+  bool found = false;
+  uchar *id_toChar = (uchar *)(fk_id.c_str());
+  uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE + fk_id.length()] = {0};
+  rdb_netbuf_store_uint32(key_buf, Rdb_key_def::FK_SET);
+  uchar *ptr = key_buf;
+  std::string temp = fk_id;
+  unsigned char *val = new unsigned char[temp.length() + 1];
+  strcpy((char *)val, temp.c_str());
+  for (int i = 0; i < temp.length() + 1; i++) {
+    rdb_netbuf_store_byte(ptr + 1, val[i]);
+    ptr = ptr + 1;
+  }
+  const rocksdb::Slice &key = rocksdb::Slice((char *)key_buf, sizeof(key_buf));
+  std::string value;
+  const rocksdb::Status &status = get_value(key, &value);
+  if (status.ok()) {
+
+    found = true;
+  }
+  return found;
 }
 
 bool Rdb_dict_manager::get_cf_flags(const uint32_t &cf_id,
