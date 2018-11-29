@@ -5017,7 +5017,6 @@ void Rdb_dict_manager::put_fk_set(rocksdb::WriteBatch *const batch,
 
 bool Rdb_dict_manager::get_fk_id(const std::string &fk_id) const {
   bool found = false;
-  uchar *id_toChar = (uchar *)(fk_id.c_str());
   uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE + fk_id.length()] = {0};
   rdb_netbuf_store_uint32(key_buf, Rdb_key_def::FK_SET);
   uchar *ptr = key_buf;
@@ -5036,6 +5035,23 @@ bool Rdb_dict_manager::get_fk_id(const std::string &fk_id) const {
     found = true;
   }
   return found;
+}
+
+void Rdb_dict_manager::delete_fk_in_set(rocksdb::WriteBatch *const batch,
+                                  const std::string &fk_id) const {
+  
+  uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE + fk_id.length()] = {0};
+  rdb_netbuf_store_uint32(key_buf, Rdb_key_def::FK_SET);
+  uchar *ptr = key_buf;
+  std::string temp = fk_id;
+  unsigned char *val = new unsigned char[temp.length() + 1];
+  strcpy((char *)val, temp.c_str());
+  for (int i = 0; i < temp.length() + 1; i++) {
+    rdb_netbuf_store_byte(ptr + 1, val[i]);
+    ptr = ptr + 1;
+  }
+  const rocksdb::Slice &key = rocksdb::Slice((char *)key_buf, sizeof(key_buf));
+  delete_key(batch, key);
 }
 
 bool Rdb_dict_manager::get_cf_flags(const uint32_t &cf_id,

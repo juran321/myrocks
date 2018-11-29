@@ -1388,6 +1388,9 @@ public:
                   struct Rdb_fk_def &fk_def) const;
   bool get_fk_id(const std::string &fk_id) const;
 
+  void delete_fk_in_set(rocksdb::WriteBatch *const batch,
+                  const std::string &fk_id) const;
+
   /* CF id => CF flags */
   void add_cf_flags(rocksdb::WriteBatch *const batch, const uint &cf_id,
                     const uint &cf_flags) const;
