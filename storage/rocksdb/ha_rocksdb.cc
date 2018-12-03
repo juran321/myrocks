@@ -7046,13 +7046,20 @@ int ha_rocksdb::create_key_def(const TABLE *const table_arg, const uint &i,
 
   const char *key_name = get_key_name(i, table_arg, m_tbl_def);
 
-  KEY *key_info = &table_arg->key_info[i];
-  KEY_PART_INFO *key_part = key_info->key_part;
+
   
   if (std::string(key_name) == "PRIMARY" || std::string(key_name) != "HIDDEN_PK_ID") {
+    KEY *key_info = &table_arg->key_info[i];
+    //handle multiple primay key:
+    KEY_PART_INFO key_part = key_info->key_part[0];
+    std::string cur_name = std::string(key_part.field->field_name);
     
-    key_name = key_part->field->field_name;
-  }
+    for(int i = 1; i < key_info->actual_key_parts;i++){
+      
+      cur_name = cur_name + ", " + key_info->key_part[i].field->field_name;
+    }
+    key_name = cur_name.c_str();
+  } 
 
   *new_key_def = std::make_shared<Rdb_key_def>(
       index_id, i, cf_info.cf_handle, index_dict_version, index_type,
@@ -7385,20 +7392,36 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       
       std::string col_name;
       rdb_parse_id(&my_charset_bin, str, &col_name);
-      bool found = m_tbl_def->find_key_gl_index_by_name(
-          col_name, fk_def.m_foreign_gl_index_id);
-      if (!found) {
-        
-        //ddl_manager.remove(m_tbl_def,batch,true);
-        err = HA_ERR_CANNOT_ADD_FOREIGN;
-        dict_manager.unlock();
-        goto error;
-      }
-
       str = rdb_check_next_token(&my_charset_bin, str, col_name.c_str(),
                                  &success);
       DBUG_ASSERT(success);
+      int fk_col_num = 0;
+      //calcualte how many columns as fk;
+      while(success){
+        str = rdb_check_next_token(&my_charset_bin, str, ",", &success);
+        if(!success){
+          break;
+        }
+        std::string cur_col_name;
+        rdb_parse_id(&my_charset_bin, str, &cur_col_name);
+        str = rdb_check_next_token(&my_charset_bin, str, cur_col_name.c_str(),
+                                 &success);
+        if(!success){
+          break;
+        }
+        col_name = col_name + ", " + cur_col_name;     
+        fk_col_num += 1;
 
+      }
+      
+      bool found = m_tbl_def->find_key_gl_index_by_name(
+          col_name, fk_def.m_foreign_gl_index_id);
+      if (!found) {
+
+        err = HA_ERR_CANNOT_ADD_FOREIGN;
+        dict_manager.unlock();
+        goto error;
+      }      
       str = rdb_check_next_token(&my_charset_bin, str, ")", &success);
       if (!success) {
         continue;
@@ -7443,20 +7466,34 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       }
 
       std::string ref_col_name;
-
+      //calcualte how many columns as fk;
       rdb_parse_id(&my_charset_bin, str, &ref_col_name);
+      str = rdb_check_next_token(&my_charset_bin, str, ref_col_name.c_str(),
+                                 &success);
+      DBUG_ASSERT(success);
+      while(success){
+        str = rdb_check_next_token(&my_charset_bin, str, ",", &success);
+        if(!success){
+          break;
+        }
+        std::string cur_ref_col_name;
+        rdb_parse_id(&my_charset_bin, str, &cur_ref_col_name);
+        str = rdb_check_next_token(&my_charset_bin, str, cur_ref_col_name.c_str(),
+                                 &success);
+        if(!success){
+          break;
+        }
+        ref_col_name = ref_col_name + ", " + cur_ref_col_name;     
+
+      }
+
       found = referenced_tdef->find_key_gl_index_by_name(
           ref_col_name, fk_def.m_referenced_gl_index_id);
       if (!found) {
-        //ddl_manager.remove(m_tbl_def,batch,true);
         err = HA_ERR_CANNOT_ADD_FOREIGN;
         dict_manager.unlock();
         goto error;
       }
-
-      str = rdb_check_next_token(&my_charset_bin, str, ref_col_name.c_str(),
-                                 &success);
-      DBUG_ASSERT(success);
 
       str = rdb_check_next_token(&my_charset_bin, str, ")", &success);
       if (!success) {
@@ -12191,7 +12228,7 @@ bool ha_rocksdb::prepare_inplace_alter_table(
       (my_core::Alter_inplace_info::DROP_INDEX |
        my_core::Alter_inplace_info::DROP_UNIQUE_INDEX |
        my_core::Alter_inplace_info::ADD_INDEX |
-       my_core::Alter_inplace_info::ADD_UNIQUE_INDEX)) {
+       my_core::Alter_inplace_info::ADD_UNIQUE_INDEX )) {
 
     if (has_hidden_pk(altered_table)) {
       new_n_keys += 1;

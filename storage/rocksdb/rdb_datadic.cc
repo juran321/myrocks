@@ -162,6 +162,7 @@ void Rdb_key_def::setup(const TABLE *const tbl,
       if (std::string(key_info->name) == "PRIMARY") {
         m_name = std::string(key_info->name);
       } else {
+          
         m_name = std::string(key_info->key_part->field->field_name);
       }
 
@@ -170,11 +171,14 @@ void Rdb_key_def::setup(const TABLE *const tbl,
     }
 
     // this is to make foreign key reference to primary key possible
-    if (m_name == "PRIMARY") {
+    if (m_name == "PRIMARY" || m_name != "HIDDEN_PK_ID") {
       DBUG_ASSERT(!secondary_key);
-      if (key_info->actual_key_parts == 1) {
-        m_name = std::string(key_info->key_part->field->field_name);
+      KEY_PART_INFO key_part = key_info->key_part[0];
+      std::string cur_name = std::string(key_part.field->field_name);
+      for(int i = 1; i < key_info->actual_key_parts;i++){
+        cur_name = cur_name + ", " + key_info->key_part[i].field->field_name;
       }
+      m_name = cur_name.c_str();
     }
 
     if (secondary_key)
