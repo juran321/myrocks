@@ -20,12 +20,12 @@
 #endif
 
 /* C++ standard header files */
+#include <list>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <list>
 
 /* MySQL header files */
 #include "./handler.h"   /* handler */
@@ -272,9 +272,9 @@ const char *const RDB_TTL_COL_QUALIFIER = "ttl_col";
 */
 #define HA_ERR_ROCKSDB_FIRST (HA_ERR_LAST + 1)
 #define HA_ERR_ROCKSDB_PK_REQUIRED (HA_ERR_ROCKSDB_FIRST + 0)
-#define HA_ERR_ROCKSDB_TABLE_DATA_DIRECTORY_NOT_SUPPORTED                      \
+#define HA_ERR_ROCKSDB_TABLE_DATA_DIRECTORY_NOT_SUPPORTED \
   (HA_ERR_ROCKSDB_FIRST + 1)
-#define HA_ERR_ROCKSDB_TABLE_INDEX_DIRECTORY_NOT_SUPPORTED                     \
+#define HA_ERR_ROCKSDB_TABLE_INDEX_DIRECTORY_NOT_SUPPORTED \
   (HA_ERR_ROCKSDB_FIRST + 2)
 #define HA_ERR_ROCKSDB_COMMIT_FAILED (HA_ERR_ROCKSDB_FIRST + 3)
 #define HA_ERR_ROCKSDB_BULK_LOAD (HA_ERR_ROCKSDB_FIRST + 4)
@@ -330,7 +330,7 @@ struct Rdb_table_handler {
   atomic_stat<int> m_lock_wait_timeout_counter;
   atomic_stat<int> m_deadlock_counter;
 
-  my_core::THR_LOCK m_thr_lock; ///< MySQL latch needed by m_db_lock
+  my_core::THR_LOCK m_thr_lock;  ///< MySQL latch needed by m_db_lock
 
   /* Stores cumulative table statistics */
   my_io_perf_atomic_t m_io_perf_read;
@@ -458,27 +458,33 @@ struct st_io_stall_stats {
   ulonglong total_slowdown;
 
   st_io_stall_stats()
-      : level0_slowdown(0), level0_slowdown_with_compaction(0),
-        level0_numfiles(0), level0_numfiles_with_compaction(0),
+      : level0_slowdown(0),
+        level0_slowdown_with_compaction(0),
+        level0_numfiles(0),
+        level0_numfiles_with_compaction(0),
         stop_for_pending_compaction_bytes(0),
-        slowdown_for_pending_compaction_bytes(0), memtable_compaction(0),
-        memtable_slowdown(0), total_stop(0), total_slowdown(0) {}
+        slowdown_for_pending_compaction_bytes(0),
+        memtable_compaction(0),
+        memtable_slowdown(0),
+        total_stop(0),
+        total_slowdown(0) {}
 };
 
-} // namespace myrocks
+}  // namespace myrocks
 
 #include "./rdb_buff.h"
 
 /* Provide hash function for GL_INDEX_ID so we can include it in sets */
 namespace std {
-template <> struct hash<myrocks::GL_INDEX_ID> {
+template <>
+struct hash<myrocks::GL_INDEX_ID> {
   std::size_t operator()(const myrocks::GL_INDEX_ID &gl_index_id) const {
     const uint64_t val =
         ((uint64_t)gl_index_id.cf_id << 32 | (uint64_t)gl_index_id.index_id);
     return std::hash<uint64_t>()(val);
   }
 };
-} // namespace std
+}  // namespace std
 
 namespace myrocks {
 
@@ -488,9 +494,9 @@ namespace myrocks {
 */
 
 class ha_rocksdb : public my_core::handler {
-  my_core::THR_LOCK_DATA m_db_lock; ///< MySQL database lock
+  my_core::THR_LOCK_DATA m_db_lock;  ///< MySQL database lock
 
-  Rdb_table_handler *m_table_handler; ///< Open table handler
+  Rdb_table_handler *m_table_handler;  ///< Open table handler
 
   /* Iterator used for range scans and for full table/index scans */
   rocksdb::Iterator *m_scan_it;
@@ -669,11 +675,10 @@ class ha_rocksdb : public my_core::handler {
       MY_ATTRIBUTE((__nonnull__));
   void release_scan_iterator(void);
 
-  rocksdb::Status
-  get_for_update(Rdb_transaction *const tx,
-                 rocksdb::ColumnFamilyHandle *const column_family,
-                 const rocksdb::Slice &key,
-                 rocksdb::PinnableSlice *value) const;
+  rocksdb::Status get_for_update(
+      Rdb_transaction *const tx,
+      rocksdb::ColumnFamilyHandle *const column_family,
+      const rocksdb::Slice &key, rocksdb::PinnableSlice *value) const;
 
   int get_row_by_rowid(uchar *const buf, const char *const rowid,
                        const uint rowid_size, const bool skip_lookup = false,
@@ -727,7 +732,7 @@ class ha_rocksdb : public my_core::handler {
 
   /* Describes instructions on how to decode the field */
   class READ_FIELD {
-  public:
+   public:
     /* Points to Rdb_field_encoder describing the field */
     Rdb_field_encoder *m_field_enc;
     /* if true, decode the field, otherwise skip it */
@@ -792,7 +797,7 @@ class ha_rocksdb : public my_core::handler {
   */
   void update_stats(void);
 
-public:
+ public:
   /*
     Controls whether writes include checksums. This is updated from the session
     variable
@@ -811,9 +816,10 @@ public:
     int err MY_ATTRIBUTE((__unused__));
     err = finalize_bulk_load(false);
     if (err != 0) {
-      sql_print_error("RocksDB: Error %d finalizing bulk load while closing "
-                      "handler.",
-                      err);
+      sql_print_error(
+          "RocksDB: Error %d finalizing bulk load while closing "
+          "handler.",
+          err);
     }
   }
 
@@ -934,10 +940,9 @@ public:
   static const std::vector<std::string> parse_into_tokens(const std::string &s,
                                                           const char delim);
 
-  static const std::string
-  generate_cf_name(const uint index, const TABLE *const table_arg,
-                   const Rdb_tbl_def *const tbl_def_arg,
-                   bool *per_part_match_found);
+  static const std::string generate_cf_name(
+      const uint index, const TABLE *const table_arg,
+      const Rdb_tbl_def *const tbl_def_arg, bool *per_part_match_found);
 
   static const char *get_key_name(const uint index,
                                   const TABLE *const table_arg,
@@ -1096,7 +1101,7 @@ public:
 
   void free_foreign_key_create_info(char *str);
 
-private:
+ private:
   struct key_def_cf_info {
     rocksdb::ColumnFamilyHandle *cf_handle;
     bool is_reverse_cf;
@@ -1171,10 +1176,9 @@ private:
       const std::array<key_def_cf_info, MAX_INDEXES + 1> &cfs) const
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
 
-  std::unordered_map<std::string, uint>
-  get_old_key_positions(const TABLE *table_arg, const Rdb_tbl_def *tbl_def_arg,
-                        const TABLE *old_table_arg,
-                        const Rdb_tbl_def *old_tbl_def_arg) const
+  std::unordered_map<std::string, uint> get_old_key_positions(
+      const TABLE *table_arg, const Rdb_tbl_def *tbl_def_arg,
+      const TABLE *old_table_arg, const Rdb_tbl_def *old_tbl_def_arg) const
       MY_ATTRIBUTE((__nonnull__));
 
   int compare_key_parts(const KEY *const old_key,
@@ -1296,7 +1300,8 @@ private:
   Rdb_tbl_def *get_table_if_exists(const char *const tablename)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
   void read_thd_vars(THD *const thd) MY_ATTRIBUTE((__nonnull__));
-  bool drop_foreign_key(THD *const thd, std::set<std::string> &fk_set, std::string &table_name) 
+  bool drop_foreign_key(THD *const thd, std::set<std::string> &fk_set,
+                        std::string &table_name)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
   bool contains_foreign_key(THD *const thd)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
@@ -1309,7 +1314,7 @@ private:
   int finalize_bulk_load(bool print_client_error = true)
       MY_ATTRIBUTE((__warn_unused_result__));
 
-public:
+ public:
   int index_init(uint idx, bool sorted) override
       MY_ATTRIBUTE((__warn_unused_result__));
   int index_end() override MY_ATTRIBUTE((__warn_unused_result__));
@@ -1415,22 +1420,21 @@ public:
       TABLE *const altered_table,
       my_core::Alter_inplace_info *const ha_alter_info) override;
 
-  bool
-  commit_inplace_alter_table(TABLE *const altered_table,
-                             my_core::Alter_inplace_info *const ha_alter_info,
-                             bool commit) override;
+  bool commit_inplace_alter_table(
+      TABLE *const altered_table,
+      my_core::Alter_inplace_info *const ha_alter_info, bool commit) override;
 
   void set_use_read_free_rpl(const char *const whitelist);
   void set_skip_unique_check_tables(const char *const whitelist);
 
-public:
+ public:
   virtual void rpl_before_delete_rows() override;
   virtual void rpl_after_delete_rows() override;
   virtual void rpl_before_update_rows() override;
   virtual void rpl_after_update_rows() override;
   virtual bool use_read_free_rpl() override;
 
-private:
+ private:
   /* Flags tracking if we are inside different replication operation */
   bool m_in_rpl_delete_rows;
   bool m_in_rpl_update_rows;
@@ -1480,16 +1484,21 @@ struct Rdb_inplace_alter_ctx : public my_core::inplace_alter_handler_ctx {
       std::unordered_set<std::shared_ptr<Rdb_key_def>> added_indexes,
       std::unordered_set<GL_INDEX_ID> dropped_index_ids, uint n_added_keys,
       uint n_dropped_keys, ulonglong max_auto_incr)
-      : my_core::inplace_alter_handler_ctx(), m_new_tdef(new_tdef),
-        m_old_key_descr(old_key_descr), m_new_key_descr(new_key_descr),
-        m_old_n_keys(old_n_keys), m_new_n_keys(new_n_keys),
-        m_added_indexes(added_indexes), m_dropped_index_ids(dropped_index_ids),
-        m_n_added_keys(n_added_keys), m_n_dropped_keys(n_dropped_keys),
+      : my_core::inplace_alter_handler_ctx(),
+        m_new_tdef(new_tdef),
+        m_old_key_descr(old_key_descr),
+        m_new_key_descr(new_key_descr),
+        m_old_n_keys(old_n_keys),
+        m_new_n_keys(new_n_keys),
+        m_added_indexes(added_indexes),
+        m_dropped_index_ids(dropped_index_ids),
+        m_n_added_keys(n_added_keys),
+        m_n_dropped_keys(n_dropped_keys),
         m_max_auto_incr(max_auto_incr) {}
 
   ~Rdb_inplace_alter_ctx() {}
 
-private:
+ private:
   /* Disable Copying */
   Rdb_inplace_alter_ctx(const Rdb_inplace_alter_ctx &);
   Rdb_inplace_alter_ctx &operator=(const Rdb_inplace_alter_ctx &);
@@ -1498,4 +1507,4 @@ private:
 // file name indicating RocksDB data corruption
 std::string rdb_corruption_marker_file_name();
 
-} // namespace myrocks
+}  // namespace myrocks
