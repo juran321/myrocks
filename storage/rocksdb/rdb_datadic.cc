@@ -4348,6 +4348,14 @@ void Rdb_ddl_manager::remove(Rdb_tbl_def *const tbl,
   if (lock)
     mysql_rwlock_unlock(&m_rwlock);
 }
+bool Rdb_ddl_manager::is_tmp_table(const std::string &name){
+  std::size_t found = name.find("#sql");
+  if(found != std::string::npos) {
+    return true;
+  }
+  return false;
+}
+
 
 bool Rdb_ddl_manager::rename(const std::string &from, const std::string &to,
                              rocksdb::WriteBatch *const batch) {
@@ -4356,14 +4364,39 @@ bool Rdb_ddl_manager::rename(const std::string &from, const std::string &to,
   bool res = true;
   uchar new_buf[FN_LEN * 2 + Rdb_key_def::INDEX_NUMBER_SIZE];
   uint new_pos = 0;
-
+  auto ddl_manager = rdb_get_ddl_manager();
   mysql_rwlock_wrlock(&m_rwlock);
   if (!(rec = find(from, false))) {
     mysql_rwlock_unlock(&m_rwlock);
     return true;
   }
-
+  bool from_is_tmp = is_tmp_table(from);
+  bool to_is_tmp = is_tmp_table(to);
   new_rec = new Rdb_tbl_def(to);
+  std::set<std::string> fk_id_set;
+  //if "to" table is temp, means "from" table might has drop_fk_set
+  if (to_is_tmp) {
+    if(!new_rec->drop_fk_set.empty()){
+      Rdb_fk_set fk_set = rec->m_foreign_descr_set;
+      for(auto it = rec->drop_fk_set.begin(); it != rec->drop_fk_set.end(); ++it){
+        std::string id = *it;
+        for(auto iter = fk_set.begin(); iter != fk_set.end(); ++iter) {
+          Rdb_fk_def cur_fk = *iter;
+          if(cur_fk.id == id) {
+            //delete it from rec table in ddl;
+            fk_set.erase(cur_fk);
+            std::string referenced_table_name = ddl_manager->safe_get_table_name(iter->m_referenced_gl_index_id);
+            auto referenced_table = ddl_manager->find(referenced_table_name);
+            DBUG_ASSERT(referencesd_table != nullptr);
+            referenced_table->m_referenced_descr_set.erase(cur_fk);
+
+
+          }
+        }
+      }
+    }
+  }
+
 
   new_rec->m_key_count = rec->m_key_count;
   new_rec->m_auto_incr_val =
@@ -4924,9 +4957,9 @@ void Rdb_dict_manager::put_fk_def(rocksdb::WriteBatch *const batch,
                                   const GL_INDEX_ID &referenced_gl_index_id,
                                   const uint32_t &type, const std::string &id) {
 
-  uchar *id_toChar = (uchar *)(id.c_str());
+  std::string temp = id.c_str();
   uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3] = {0};
-  uchar value_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3 + sizeof(id_toChar)] = {0};
+  uchar value_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 3 + id.length()] = {0};
   rdb_netbuf_store_uint32(key_buf, Rdb_key_def::FK_DEFINITION);
   rdb_netbuf_store_uint32(key_buf + Rdb_key_def::INDEX_NUMBER_SIZE,
                           foreign_gl_index_id.cf_id);
@@ -4938,9 +4971,13 @@ void Rdb_dict_manager::put_fk_def(rocksdb::WriteBatch *const batch,
   rdb_netbuf_store_uint32(value_buf + Rdb_key_def::INDEX_NUMBER_SIZE,
                           referenced_gl_index_id.index_id);
   rdb_netbuf_store_uint32(value_buf + 2 * Rdb_key_def::INDEX_NUMBER_SIZE, type);
-  rdb_netbuf_store_byte(value_buf + 2 * Rdb_key_def::INDEX_NUMBER_SIZE +
-                            sizeof(id_toChar),
-                        *id_toChar);
+  unsigned char * ptr = value_buf+ 3 * Rdb_key_def::INDEX_NUMBER_SIZE;
+  unsigned char * val = new unsigned char[temp.length()];
+  strcpy((char *) val, temp.c_str());
+  for(int i = 0; i < temp.length()+1;i++){
+    rdb_netbuf_store_byte(ptr, val[i]);
+    ptr = ptr + 1;
+  }
   const rocksdb::Slice value =
       rocksdb::Slice((char *)value_buf, sizeof(value_buf));
   batch->Put(m_system_cfh, key, value);
@@ -4976,7 +5013,17 @@ void Rdb_dict_manager::get_fk_defs(
         rdb_netbuf_to_uint32(ptr + Rdb_key_def::INDEX_NUMBER_SIZE);
     fk_def.m_type =
         rdb_netbuf_to_uint32(ptr + 2 * Rdb_key_def::INDEX_NUMBER_SIZE);
-    fk_def.id = rdb_netbuf_to_uint32(ptr + 3 * Rdb_key_def::INDEX_NUMBER_SIZE);
+    int length = val.size() - 3 * Rdb_key_def::INDEX_NUMBER_SIZE;
+    ptr = ptr + 3 * Rdb_key_def::INDEX_NUMBER_SIZE;
+    unsigned char id_char[length];
+    for(int i = 0; i < length; i++){
+      unsigned char cur = rdb_netbuf_to_byte(ptr);
+      id_char[i] = cur;
+      ptr = ptr+1;
+
+    }
+    std::string id_str(reinterpret_cast<char*>(id_char), length);
+    fk_def.id = id_str;
     fk_def_vec.push_back(fk_def);
   }
   delete it;
@@ -4989,7 +5036,6 @@ void Rdb_dict_manager::delete_fk_def(rocksdb::WriteBatch *const batch,
 
 void Rdb_dict_manager::put_fk_set(rocksdb::WriteBatch *const batch,
                                   struct Rdb_fk_def &fk_def) const {
-  uchar *id_toChar = (uchar *)(fk_def.id.c_str());
   uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE + fk_def.id.length()] = {0};
   uchar value_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 5] = {0};
   rdb_netbuf_store_uint32(key_buf, Rdb_key_def::FK_SET);

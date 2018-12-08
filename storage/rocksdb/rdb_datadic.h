@@ -1069,6 +1069,8 @@ public:
   // 2018/06/11 Quan Zhang Set of foreign key costraints which refer to
   // this table
   Rdb_fk_set m_referenced_descr_set;
+  //2018/12/06 drop foreign key based on constraint name
+  std::set<std::string> drop_fk_set;
 
   std::atomic<longlong> m_hidden_pk_val;
   std::atomic<ulonglong> m_auto_incr_val;
@@ -1170,6 +1172,7 @@ public:
               const bool &lock = true);
   bool rename(const std::string &from, const std::string &to,
               rocksdb::WriteBatch *const batch);
+  bool is_tmp_table(const std::string &name);
 
   uint get_and_update_next_number(Rdb_dict_manager *const dict) {
     return m_sequence.get_and_update_next_number(dict);
@@ -1388,6 +1391,7 @@ public:
                   struct Rdb_fk_def &fk_def) const;
   bool get_fk_id(const std::string &fk_id) const;
 
+  bool get_all_fk_defs(const std::string &fk_id, std::set<Rdb_fk_def> &fk_set) const;
   void delete_fk_in_set(rocksdb::WriteBatch *const batch,
                   const std::string &fk_id) const;
 

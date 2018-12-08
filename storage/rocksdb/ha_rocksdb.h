@@ -25,6 +25,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <list>
 
 /* MySQL header files */
 #include "./handler.h"   /* handler */
@@ -1295,7 +1296,8 @@ private:
   Rdb_tbl_def *get_table_if_exists(const char *const tablename)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
   void read_thd_vars(THD *const thd) MY_ATTRIBUTE((__nonnull__));
-
+  bool drop_foreign_key(THD *const thd, std::set<std::string> &fk_set, std::string &table_name) 
+      MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
   bool contains_foreign_key(THD *const thd)
       MY_ATTRIBUTE((__nonnull__, __warn_unused_result__));
 

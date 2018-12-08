@@ -32,6 +32,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <list>
 /* MySQL includes */
 #include "./debug_sync.h"
 #include "./my_bit.h"
@@ -7090,7 +7091,57 @@ int rdb_normalize_tablename(const std::string &tablename,
 
   return HA_EXIT_SUCCESS;
 }
+/*
+  Check to see if the user's original statmen includes drop foreign key
+*/
+bool ha_rocksdb::drop_foreign_key(THD *const thd, std::set<std::string> &fk_set, std::string &table_name){
+  bool success;
+  const char *str = thd_query_string(thd)->str;
+  bool valid_drop = false;
 
+  DBUG_ASSERT(str != nullptr);
+  str = rdb_find_in_string(str, "TABLE", &success);
+  if(!success){
+    return false;
+  }
+  str = rdb_check_next_token(&my_charset_bin, str, "TABLE", &success);
+  rdb_parse_id(&my_charset_bin, str, &table_name);
+  str = rdb_check_next_token(&my_charset_bin, str, table_name.c_str(), &success);
+  DBUG_ASSERT(success);
+
+  while (*str != '\0') {
+    //Scan from our current pos looking for 'DROP'
+    str = rdb_find_in_string(str, "DROP", &success);
+    if(!success) {
+      return false;
+    }
+    str = rdb_check_next_token(&my_charset_bin, str, "DROP", &success);
+    DBUG_ASSERT(success);
+
+    if (!my_isspace(&my_charset_bin, *str)) {
+      return false;
+    }
+
+    str = rdb_check_next_token(&my_charset_bin, str, "FOREIGN", &success);
+    DBUG_ASSERT(success);
+    if (!my_isspace(&my_charset_bin, *str)) {
+      return false;
+    }
+    str = rdb_check_next_token(&my_charset_bin, str, "KEY", &success);
+    if (!success) {
+      break;
+    }
+    std::string constraint_name;
+    rdb_parse_id(&my_charset_bin, str, &constraint_name);
+    str = rdb_check_next_token(&my_charset_bin, str, constraint_name.c_str(), &success);
+    DBUG_ASSERT(success);
+
+    fk_set.insert(constraint_name);
+    valid_drop = true;
+  }
+  return valid_drop;
+
+}
 /*
   Check to see if the user's original statement includes foreign key
   references
@@ -7271,9 +7322,16 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
   }
 
   bool has_foreign_key = false;
-
+  bool has_drop_foreign_key = false;
+  std::string table_name;
   if (contains_foreign_key(thd)) {
     has_foreign_key = true;
+  }
+
+  std::set<std::string> fk_set;
+  if (drop_foreign_key(thd, fk_set, table_name)) {
+    has_drop_foreign_key = true;
+
   }
 
   const std::unique_ptr<rocksdb::WriteBatch> wb = dict_manager.begin();
@@ -7318,7 +7376,38 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
   }
 
   dict_manager.lock();
+  if (has_drop_foreign_key) {
+    //get all foreign key defs base on table name
+    std::string prev_full_table_name = m_tbl_def->base_dbname() + "." + table_name;
+    auto prev_tdef = ddl_manager.find(prev_full_table_name);
+    if(prev_tdef == nullptr) {
+      //it should be "cannot drop constraint"
+      err = HA_ERR_CANNOT_ADD_FOREIGN;
+      dict_manager.unlock();
+      goto error;
+    }
+    Rdb_fk_set prev_foreign_descr_set = prev_tdef->m_foreign_descr_set;
+    Rdb_fk_set prev_referenced_descr_set = prev_tdef->m_referenced_descr_set;
 
+    for(auto iter = fk_set.begin(); iter != fk_set.end(); ++iter){
+      std::string target_name = *iter;
+      for(auto it = prev_foreign_descr_set.begin(); it != prev_foreign_descr_set.end(); ++it) {
+        Rdb_fk_def fk_def;
+        if(it->id != target_name){
+          fk_def = *it;
+          m_tbl_def->m_foreign_descr_set.insert(fk_def);
+          m_tbl_def->m_foreign_descr_set.insert(fk_def);
+        } else {
+          //delete referenced table's referenced_descr_set
+          std::string referenced_drop_table_name = ddl_manager.safe_get_table_name(it->m_referenced_gl_index_id);
+          auto referenced_drop_tdef = ddl_manager.find(referenced_drop_table_name);
+          DBUG_ASSERT(referenced_drop_tdef != nullptr);
+          referenced_drop_tdef->m_referenced_descr_set.erase(*it);
+        }
+      }
+    }
+  }
+  
   if (has_foreign_key) {
     bool success;
     const char *str = thd_query_string(thd)->str;
@@ -7395,8 +7484,7 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
       str = rdb_check_next_token(&my_charset_bin, str, col_name.c_str(),
                                  &success);
       DBUG_ASSERT(success);
-      int fk_col_num = 0;
-      //calcualte how many columns as fk;
+
       while(success){
         str = rdb_check_next_token(&my_charset_bin, str, ",", &success);
         if(!success){
@@ -7410,7 +7498,6 @@ int ha_rocksdb::create(const char *const name, TABLE *const table_arg,
           break;
         }
         col_name = col_name + ", " + cur_col_name;     
-        fk_col_num += 1;
 
       }
       
